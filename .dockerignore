@@ -1,0 +1,16 @@
+.git
+data
+.docker-cache
+.env
+.env.*
+node_modules
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/*.tsbuildinfo
+apps/web/public/cesium
+test-results
+tests
+README.md

@@ -1,0 +1,11 @@
+[project]
+name = "slope-twin-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1",
+  "httpx>=0.28,<1", "pydantic-settings>=2.7,<3", "psycopg[binary]>=3.2,<4"
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]

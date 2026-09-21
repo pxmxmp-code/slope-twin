@@ -1,0 +1,40 @@
+@import "tailwindcss" source(none);
+@source "../components";
+@source "./";
+@import "tw-animate-css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: #edf1eb;
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+:root {
+  --background: #fcfdf9;
+  --foreground: #213932;
+  --primary: #2c6450;
+  --primary-foreground: #ffffff;
+  --secondary: #edf1eb;
+  --secondary-foreground: #213932;
+  --muted: #edf1eb;
+  --muted-foreground: #73847c;
+  --accent: #e4ece3;
+  --accent-foreground: #213932;
+  --destructive: #b34839;
+  --border: #dbe3da;
+  --input: #c4d3c8;
+  --ring: #709e87;
+}

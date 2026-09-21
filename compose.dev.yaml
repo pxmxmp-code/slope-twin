@@ -1,0 +1,61 @@
+name: slope-twin-dev
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: development
+    init: true
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://api:8000
+      DEV_ALLOWED_ORIGINS: ${DEV_ALLOWED_ORIGINS:-127.0.0.1}
+    ports:
+      - "0.0.0.0:23002:3000"
+    volumes:
+      - ./apps/web/app:/app/apps/web/app:ro
+      - ./apps/web/components:/app/apps/web/components:ro
+      - ./apps/web/lib:/app/apps/web/lib:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: development
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.development
+    volumes:
+      - ./apps/api/app:/app/apps/api/app:ro
+      - ./data/TILES:/app/data/TILES:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /opt/venv/bin/python, -c, "import json,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=5)); assert h['database']=='ok' and h['tileset']=='ok'"]
+      interval: 15s
+      timeout: 8s
+      start_period: 15s
+      retries: 5
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    env_file: .env.development
+    volumes:
+      - ./data/development/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    stop_grace_period: 30s

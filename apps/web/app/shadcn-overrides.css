@@ -1,0 +1,14 @@
+.mode-switch {
+  height: auto;
+}
+.mode-switch button[data-state="active"] {
+  background: var(--green);
+  color: white;
+  box-shadow: 0 2px 5px #234c5020;
+}
+.opacity [data-orientation="horizontal"] span {
+  display: block;
+}
+.layer-row button {
+  flex-shrink: 0;
+}

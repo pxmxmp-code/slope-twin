@@ -1,0 +1,57 @@
+name: slope-twin-prod
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: production
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "0.0.0.0:23001:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: production
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.production
+    volumes:
+      - ./data/TILES:/app/data/TILES:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /opt/venv/bin/python, -c, "import json,urllib.request; h=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=5)); assert h['database']=='ok' and h['tileset']=='ok'"]
+      interval: 15s
+      timeout: 8s
+      start_period: 15s
+      retries: 5
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    env_file: .env.production
+    volumes:
+      - ./data/production/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    stop_grace_period: 30s
