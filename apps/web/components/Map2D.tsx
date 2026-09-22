@@ -74,6 +74,58 @@ function contourPopupContent(properties: Record<string, unknown>) {
   return content;
 }
 
+function geologyPopupContent(value: unknown) {
+  const content = document.createElement("div");
+  content.className = "jmd-popup-content geology-popup-content";
+  const features =
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as { features?: unknown[] }).features)
+      ? (value as { features: unknown[] }).features
+      : [];
+  const properties =
+    features[0] && typeof features[0] === "object"
+      ? ((features[0] as { properties?: Record<string, unknown> }).properties ??
+        {})
+      : {};
+
+  const title = document.createElement("strong");
+  title.textContent = features.length
+    ? `⛰ 地质属性（${features.length} 个要素）`
+    : "⛰ 地质属性";
+  content.append(title);
+
+  const rows = Object.entries(properties)
+    .filter(([, result]) => result !== null && result !== "")
+    .slice(0, 16);
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "此处未查询到地质要素";
+    content.append(empty);
+    return content;
+  }
+  for (const [label, result] of rows) {
+    const row = document.createElement("div");
+    const name = document.createElement("span");
+    const output = document.createElement("b");
+    name.textContent = label;
+    output.textContent =
+      typeof result === "object" ? JSON.stringify(result) : String(result);
+    row.append(name, output);
+    content.append(row);
+  }
+  return content;
+}
+
+function mercatorMeters(lon: number, lat: number): [number, number] {
+  const radius = 6378137;
+  const safeLat = Math.max(-85.051129, Math.min(85.051129, lat));
+  return [
+    radius * ((lon * Math.PI) / 180),
+    radius * Math.asinh(Math.tan((safeLat * Math.PI) / 180)),
+  ];
+}
+
 function contourIntervalForZoom(zoom: number) {
   if (zoom >= 18) return 2;
   if (zoom >= 16) return 10;
@@ -168,6 +220,7 @@ export default function Map2D({
     mapRef.current = map;
     let contourInterval = 20;
     let contourLodReady = false;
+    let geologyRequest: AbortController | undefined;
 
     const scaleControl = new mapboxgl.ScaleControl({ unit: "metric" });
     map.addControl(scaleControl, "bottom-left");
@@ -177,7 +230,9 @@ export default function Map2D({
       onStatusRef.current(
         source === "dom"
           ? "DOM 加载失败，请检查 GeoServer 服务。"
-          : "地图资源加载失败，请检查令牌、域名授权或网络。",
+          : source === "geology-src"
+            ? "地质图加载失败，请检查地质云令牌。"
+            : "地图资源加载失败，请检查令牌、域名授权或网络。",
       );
     });
 
@@ -223,7 +278,57 @@ export default function Map2D({
           }
           return next;
         });
+        return;
       }
+
+      if (!config.geologyAvailable || !layersRef.current.geology) return;
+      const vectorLayers = [
+        "jmd-fill",
+        "contour-minor",
+        "contour-major",
+      ].filter((id) => mLayerExists(map, id));
+      if (
+        vectorLayers.length &&
+        map.queryRenderedFeatures(e.point, { layers: vectorLayers }).length
+      )
+        return;
+
+      const bounds = map.getBounds();
+      if (!bounds) return;
+      const [west, south] = mercatorMeters(bounds.getWest(), bounds.getSouth());
+      const [east, north] = mercatorMeters(bounds.getEast(), bounds.getNorth());
+      const canvas = map.getCanvas();
+      const params = new URLSearchParams({
+        west: String(west),
+        south: String(south),
+        east: String(east),
+        north: String(north),
+        width: String(canvas.clientWidth),
+        height: String(canvas.clientHeight),
+        x: String(Math.round(e.point.x)),
+        y: String(Math.round(e.point.y)),
+      });
+      geologyRequest?.abort();
+      geologyRequest = new AbortController();
+      onStatusRef.current("正在查询地质属性…");
+      void fetch(`/api/geology/info?${params}`, {
+        signal: geologyRequest.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return (await response.json()) as unknown;
+        })
+        .then((value) => {
+          new mapboxgl.Popup({ className: "jmd-popup", maxWidth: "360px" })
+            .setLngLat(e.lngLat)
+            .setDOMContent(geologyPopupContent(value))
+            .addTo(map);
+          onStatusRef.current("地质属性查询完成");
+        })
+        .catch((error: unknown) => {
+          if ((error as { name?: string }).name !== "AbortError")
+            onStatusRef.current("地质属性查询失败，请检查地质云令牌。");
+        });
     });
 
     map.on("load", () => {
@@ -276,6 +381,25 @@ export default function Map2D({
         source: "dom",
         paint: { "raster-fade-duration": 0 },
       });
+
+      if (config.geologyAvailable) {
+        map.addSource("geology-src", {
+          type: "raster",
+          tiles: ["/api/geology/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          minzoom: 2,
+          maxzoom: 18,
+        });
+        map.addLayer({
+          id: "geology",
+          type: "raster",
+          source: "geology-src",
+          layout: {
+            visibility: layersRef.current.geology ? "visible" : "none",
+          },
+          paint: { "raster-opacity": 0.82, "raster-fade-duration": 0 },
+        });
+      }
 
       // 4. Project Boundary
       const [w, s, e, n] = bounds;
@@ -514,6 +638,7 @@ export default function Map2D({
 
     return () => {
       ro.disconnect();
+      geologyRequest?.abort();
       for (const marker of sensorMarkersRef.current) marker.remove();
       sensorMarkersRef.current = [];
       mapRef.current = null;
@@ -551,6 +676,12 @@ export default function Map2D({
       m.setLayoutProperty("dom", "visibility", layers.dom ? "visible" : "none");
       m.setPaintProperty("dom", "raster-opacity", layers.opacity);
     }
+    if (mLayerExists(m, "geology"))
+      m.setLayoutProperty(
+        "geology",
+        "visibility",
+        layers.geology ? "visible" : "none",
+      );
 
     if (mLayerExists(m, "jmd-fill")) {
       m.setLayoutProperty(
@@ -581,6 +712,7 @@ export default function Map2D({
     layers.opacity,
     layers.jmd,
     layers.contours,
+    layers.geology,
   ]);
 
   // 3. Sensor markers

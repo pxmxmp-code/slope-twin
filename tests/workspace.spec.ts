@@ -30,6 +30,9 @@ test("missing tokens, layer controls, and remote 3D model", async ({
   await expect(
     page.getByRole("switch", { name: "JMD 居民地要素" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "全国 1:50 万地质图" }),
+  ).toBeVisible();
   await page.getByRole("switch", { name: "JMD 居民地要素" }).click();
   await expect(
     page.getByRole("switch", { name: "JMD 居民地要素" }),

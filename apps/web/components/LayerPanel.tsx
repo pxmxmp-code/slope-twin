@@ -76,6 +76,8 @@ export function LayerPanel({
         {row("contours", "等高线", "蓝色 2m · 橙色 20m 主曲线")}
         {mode === "2d" ? (
           <>
+            {config?.geologyAvailable &&
+              row("geology", "全国 1:50 万地质图", "地质云 WMS · 点击查询属性")}
             {row("dom", "DOM 正射影像", "航测遥感影像")}
             <div className="opacity">
               <span>

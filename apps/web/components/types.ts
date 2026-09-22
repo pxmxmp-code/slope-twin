@@ -5,6 +5,7 @@ export type SceneConfig = {
   domTiles: string;
   tilesetUrl: string;
   groundElevation: number;
+  geologyAvailable: boolean;
 };
 
 export type ViewMode = "2d" | "3d";
@@ -32,6 +33,7 @@ export type Layers = {
   sensors: boolean;
   jmd: boolean;
   contours: boolean;
+  geology: boolean;
 };
 
 export type Telemetry = {
@@ -70,6 +72,7 @@ export const DEFAULT_LAYERS: Layers = {
   sensors: true,
   jmd: true,
   contours: true,
+  geology: true,
 };
 
 export const DEFAULT_TELEMETRY: Telemetry = {

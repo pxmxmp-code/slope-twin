@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import PurePosixPath
+import ssl
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -26,12 +27,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        geocloud_ssl = ssl.create_default_context()
+        geocloud_ssl.options |= ssl.OP_LEGACY_SERVER_CONNECT
         async with httpx.AsyncClient(
             timeout=30,
             trust_env=False,
             limits=httpx.Limits(max_connections=32),
-        ) as http:
-            app.state.infrastructure = Infrastructure(settings, http)
+        ) as http, httpx.AsyncClient(
+            timeout=45,
+            trust_env=False,
+            verify=geocloud_ssl,
+            limits=httpx.Limits(max_connections=32),
+        ) as geocloud_http:
+            app.state.infrastructure = Infrastructure(settings, http, geocloud_http)
             yield
 
     app = FastAPI(title="Slope Twin API", lifespan=lifespan)
@@ -73,6 +81,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content,
             media_type="image/png",
             headers={"Cache-Control": "public, max-age=300"},
+        )
+
+    @app.get("/api/geology/{z}/{x}/{y}.png")
+    async def geology_tile(z: int, x: int, y: int, request: Request):
+        content = await infrastructure(request).geology_png(z, x, y)
+        return Response(
+            content,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
+    @app.get("/api/geology/info")
+    async def geology_info(
+        request: Request,
+        west: float,
+        south: float,
+        east: float,
+        north: float,
+        width: int = Query(ge=1, le=4096),
+        height: int = Query(ge=1, le=4096),
+        x: int = Query(ge=0),
+        y: int = Query(ge=0),
+    ):
+        half = 20037508.342789244
+        if not (
+            -half <= west < east <= half
+            and -half <= south < north <= half
+            and x < width
+            and y < height
+        ):
+            raise HTTPException(422, "无效的地图查询范围或像素坐标")
+        return await infrastructure(request).geology_info(
+            (west, south, east, north), width, height, x, y
         )
 
     @app.api_route("/tiles/{file_path:path}", methods=["GET", "HEAD"])

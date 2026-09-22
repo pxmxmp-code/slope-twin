@@ -88,6 +88,8 @@ rtk docker compose down
 | `GEOSERVER_WFS_URL`               | API 访问服务器等高线 WFS                            |
 | `GEOSERVER_DOM_LAYER`             | DOM 图层名                                          |
 | `GEOSERVER_CONTOUR_LAYER`         | 三维场景使用的等高线图层名                          |
+| `GEOCLOUD_WMS_URL`                | 全国 1:50 万地质图 WMS 完整地址（含 `tk`）          |
+| `GEOCLOUD_WMS_LAYERS`             | 地质图子图层，默认 `t0` 至 `t12`                    |
 | `MINIO_ENDPOINT` / `MINIO_BUCKET` | API 访问服务器 3D Tiles                             |
 | `DOM_BOUNDS`                      | 项目范围，顺序为西、南、东、北                      |
 | `GROUND_ELEVATION`                | 三维本地高程基准，当前取等高线最低值 `1208` 米      |

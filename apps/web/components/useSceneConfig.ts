@@ -13,7 +13,8 @@ function isSceneConfig(value: unknown): value is SceneConfig {
     config.bounds.every((item) => typeof item === "number") &&
     typeof config.domTiles === "string" &&
     typeof config.tilesetUrl === "string" &&
-    typeof config.groundElevation === "number"
+    typeof config.groundElevation === "number" &&
+    typeof config.geologyAvailable === "boolean"
   );
 }
 

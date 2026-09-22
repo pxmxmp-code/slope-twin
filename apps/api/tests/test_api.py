@@ -20,6 +20,7 @@ def settings():
         mapbox_token="public-test-token",
         minio_endpoint="http://objects.test",
         minio_bucket="slope-twin",
+        geocloud_wms_url="https://geology.test/wms?tk=secret",
     )
 
 
@@ -40,6 +41,7 @@ def test_public_config_excludes_private_settings(settings):
     assert response.json()["mapboxToken"] == "public-test-token"
     assert response.json()["tilesetUrl"] == "/tiles/tileset.json"
     assert response.json()["groundElevation"] == 1208
+    assert response.json()["geologyAvailable"] is True
     assert "secret" not in response.text
     assert "geoserver" not in response.text.lower()
 
@@ -180,3 +182,77 @@ def test_contours_are_loaded_from_geoserver_wfs(settings):
 def test_contours_reject_unsupported_interval(settings):
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/features/contours?interval=3").status_code == 422
+
+
+def test_geology_tiles_proxy_all_queryable_layers_with_token_last(settings):
+    seen: list[httpx.Request] = []
+
+    def upstream(request: httpx.Request):
+        seen.append(request)
+        return httpx.Response(200, content=b"\x89PNG\r\n\x1a\nfixture")
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        original = app.state.infrastructure.geocloud_http
+        app.state.infrastructure.geocloud_http = httpx.AsyncClient(
+            transport=httpx.MockTransport(upstream)
+        )
+        response = client.get("/api/geology/0/0/0.png")
+        app.state.infrastructure.geocloud_http = original
+
+    assert response.status_code == 200
+    assert seen[0].url.params["REQUEST"] == "GetMap"
+    assert seen[0].url.params["LAYERS"] == ",".join(f"t{i}" for i in range(13))
+    assert str(seen[0].url).endswith("tk=secret")
+
+
+def test_geology_feature_info_is_proxied_as_json(settings):
+    seen: list[httpx.Request] = []
+    result = {
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "properties": {"时代": "Q"}}],
+    }
+
+    def upstream(request: httpx.Request):
+        seen.append(request)
+        return httpx.Response(200, json=result)
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        original = app.state.infrastructure.geocloud_http
+        app.state.infrastructure.geocloud_http = httpx.AsyncClient(
+            transport=httpx.MockTransport(upstream)
+        )
+        response = client.get(
+            "/api/geology/info",
+            params={
+                "west": 100,
+                "south": 200,
+                "east": 300,
+                "north": 400,
+                "width": 800,
+                "height": 600,
+                "x": 400,
+                "y": 300,
+            },
+        )
+        invalid = client.get(
+            "/api/geology/info",
+            params={
+                "west": 300,
+                "south": 200,
+                "east": 100,
+                "north": 400,
+                "width": 800,
+                "height": 600,
+                "x": 900,
+                "y": 300,
+            },
+        )
+        app.state.infrastructure.geocloud_http = original
+
+    assert response.json() == result
+    assert invalid.status_code == 422
+    assert seen[0].url.params["REQUEST"] == "GetFeatureInfo"
+    assert seen[0].url.params["INFO_FORMAT"] == "application/json"
+    assert seen[0].url.params["X"] == "400"

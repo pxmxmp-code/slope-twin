@@ -1,6 +1,7 @@
 import asyncio
 import math
 from urllib.parse import quote
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import httpx
 import psycopg
@@ -25,9 +26,15 @@ def mercator_bbox(z: int, x: int, y: int) -> tuple[float, float, float, float]:
 class Infrastructure:
     """The single seam between the API and infrastructure on 192.168.1.110."""
 
-    def __init__(self, settings: Settings, http: httpx.AsyncClient):
+    def __init__(
+        self,
+        settings: Settings,
+        http: httpx.AsyncClient,
+        geocloud_http: httpx.AsyncClient,
+    ):
         self.settings = settings
         self.http = http
+        self.geocloud_http = geocloud_http
 
     def object_url(self, path: str) -> str:
         safe_path = quote(path.lstrip("/"), safe="/")
@@ -103,6 +110,69 @@ class Infrastructure:
         if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):
             raise HTTPException(502, "GeoServer 未返回 PNG，请检查图层配置")
         return response.content
+
+    async def _geocloud_get(self, params: dict[str, object]) -> httpx.Response:
+        if not self.settings.geocloud_wms_url:
+            raise HTTPException(503, "地质云 WMS 未配置")
+        parsed = urlsplit(self.settings.geocloud_wms_url)
+        url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+        # MapGIS rejects the token when WMS parameters are appended after it.
+        query = [*params.items(), *parse_qsl(parsed.query, keep_blank_values=True)]
+        try:
+            response = await self.geocloud_http.get(url, params=query)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPError as error:
+            raise HTTPException(502, "地质云 WMS 服务不可用") from error
+
+    def _geocloud_params(self, request: str, bbox: tuple[float, ...]) -> dict[str, object]:
+        return {
+            "SERVICE": "WMS",
+            "VERSION": "1.1.1",
+            "REQUEST": request,
+            "LAYERS": self.settings.geocloud_wms_layers,
+            "STYLES": "",
+            "SRS": "EPSG:3857",
+            "BBOX": ",".join(map(str, bbox)),
+        }
+
+    async def geology_png(self, z: int, x: int, y: int) -> bytes:
+        params = self._geocloud_params("GetMap", mercator_bbox(z, x, y))
+        params.update(
+            WIDTH=256,
+            HEIGHT=256,
+            FORMAT="image/png",
+            TRANSPARENT="TRUE",
+        )
+        response = await self._geocloud_get(params)
+        if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise HTTPException(502, "地质云未返回地图图像，令牌可能已失效")
+        return response.content
+
+    async def geology_info(
+        self,
+        bbox: tuple[float, float, float, float],
+        width: int,
+        height: int,
+        x: int,
+        y: int,
+    ) -> object:
+        params = self._geocloud_params("GetFeatureInfo", bbox)
+        params.update(
+            QUERY_LAYERS=self.settings.geocloud_wms_layers,
+            WIDTH=width,
+            HEIGHT=height,
+            X=x,
+            Y=y,
+            FORMAT="image/png",
+            INFO_FORMAT="application/json",
+            FEATURE_COUNT=10,
+        )
+        response = await self._geocloud_get(params)
+        try:
+            return response.json()
+        except ValueError as error:
+            raise HTTPException(502, "地质云未返回可解析的属性数据") from error
 
     async def contours(self, interval: int) -> dict[str, object]:
         try:

@@ -612,6 +612,22 @@ input:focus-visible {
   color: #64748b;
 }
 
+.geology-popup-content {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.geology-popup-content b {
+  max-width: 210px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.geology-popup-content p {
+  margin: 4px 0 0;
+  color: #64748b;
+}
+
 @media (max-width: 768px) {
   .header {
     height: 52px;

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     geoserver_wfs_url: str = "http://192.168.1.110:8080/geoserver/ne/wfs"
     geoserver_dom_layer: str = "ne:DOM_COG"
     geoserver_contour_layer: str = "ne:majiadi_contours"
+    geocloud_wms_url: str = ""
+    geocloud_wms_layers: str = ",".join(f"t{i}" for i in range(13))
     minio_endpoint: str = "http://192.168.1.110:29000"
     minio_bucket: str = "slope-twin"
     ground_elevation: float = 1208
@@ -53,4 +55,5 @@ class Settings(BaseSettings):
             "domTiles": "/api/dom/{z}/{x}/{y}.png",
             "tilesetUrl": "/tiles/tileset.json",
             "groundElevation": self.ground_elevation,
+            "geologyAvailable": bool(self.geocloud_wms_url),
         }
