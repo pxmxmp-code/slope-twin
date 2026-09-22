@@ -40,7 +40,7 @@ def test_public_config_excludes_private_settings(settings):
     assert response.status_code == 200
     assert response.json()["mapboxToken"] == "public-test-token"
     assert response.json()["tilesetUrl"] == "/tiles/tileset.json"
-    assert response.json()["groundElevation"] == 1208
+    assert response.json()["terrainUrl"] == "/tiles/terrain/"
     assert response.json()["geologyAvailable"] is True
     assert "secret" not in response.text
     assert "geoserver" not in response.text.lower()

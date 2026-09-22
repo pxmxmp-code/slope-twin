@@ -4,12 +4,14 @@ export type SceneConfig = {
   bounds: [number, number, number, number];
   domTiles: string;
   tilesetUrl: string;
-  groundElevation: number;
+  terrainUrl: string;
   geologyAvailable: boolean;
 };
 
 export type ViewMode = "2d" | "3d";
-export type MeasureType = "none" | "distance" | "height" | "coordinate";
+export type MapTool =
+  "navigate" | "query" | "distance" | "height" | "coordinate";
+export type ZoomCommand = { direction: "in" | "out" };
 
 export type SlopeSensor = {
   id: string;
@@ -59,8 +61,9 @@ export type ViewProps = {
   layerOrder: LayerKey[];
   geologyToken?: string;
   locate: number;
-  measureMode: MeasureType;
-  clearMeasureTrigger: number;
+  activeTool: MapTool;
+  clearTrigger: number;
+  zoomCommand: ZoomCommand | null;
   autoOrbit?: boolean;
   presetPitch: PresetPitch | null;
   onStatus: (message: string) => void;

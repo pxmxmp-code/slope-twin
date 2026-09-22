@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type * as Cesium from "cesium";
 
-import type { MeasureType } from "./types";
+import type { MapTool } from "./types";
 
 export type MeasureInfo = {
   pointsCount: number;
@@ -12,7 +12,7 @@ export type MeasureInfo = {
 
 export function useCesiumMeasurement(
   viewerRef: RefObject<Cesium.Viewer | null>,
-  mode: MeasureType,
+  mode: MapTool,
   clearTrigger: number,
 ) {
   const entitiesRef = useRef<Cesium.Entity[]>([]);
@@ -21,7 +21,7 @@ export function useCesiumMeasurement(
   useEffect(() => {
     const viewer = viewerRef.current;
     const C = window.Cesium;
-    if (!viewer || !C || mode === "none") {
+    if (!viewer || !C || mode === "navigate" || mode === "query") {
       setInfo({ pointsCount: 0 });
       return;
     }

@@ -1,6 +1,6 @@
 # Slope Twin
 
-边坡二维正射影像、居民地要素与三维实景模型浏览应用。
+边坡二维正射影像、居民地要素、三维地形与实景模型浏览应用。
 
 ## 运行模型
 
@@ -11,7 +11,7 @@
 | 日常开发 | 本机进程，支持热更新             | 统一使用 `192.168.1.110`    |
 | 最终部署 | Docker Compose 中的 `web`、`api` | 仍使用 `192.168.1.110`      |
 
-Compose 不创建数据库、GeoServer 或 MinIO，也不用于开发。3D Tiles 始终由 API 从服务器 MinIO 流式代理，不再读取仓库下的本地瓦片目录。
+Compose 不创建数据库、GeoServer 或 MinIO，也不用于开发。3D Tiles 与 Quantized Mesh 地形始终由 API 从服务器 MinIO 流式代理。
 
 ## 目录
 
@@ -95,12 +95,11 @@ rtk docker compose down
 | `GEOSERVER_CONTOUR_LAYER`         | 三维场景使用的等高线图层名                          |
 | `GEOCLOUD_WMS_URL`                | 全国 1:50 万地质图 WMS 完整地址（含 `tk`）          |
 | `GEOCLOUD_WMS_LAYERS`             | 地质图子图层，默认 `t0` 至 `t12`                    |
-| `MINIO_ENDPOINT` / `MINIO_BUCKET` | API 访问服务器 3D Tiles                             |
+| `MINIO_ENDPOINT` / `MINIO_BUCKET` | API 访问服务器 3D Tiles 与地形瓦片                    |
 | `DOM_BOUNDS`                      | 项目范围，顺序为西、南、东、北                      |
-| `GROUND_ELEVATION`                | 三维本地高程基准，当前取等高线最低值 `1208` 米      |
 | `WEB_PORT` / `API_PORT`           | 最终容器部署端口                                    |
 
-浏览器只访问 `/api/*` 和 `/tiles/*`。数据库地址、密码及内部服务地址不会由 `/api/config` 返回。
+浏览器只访问 `/api/*` 和 `/tiles/*`。模型位于 `tiles/`，地形位于 `tiles/terrain/`。数据库地址、密码及内部服务地址不会由 `/api/config` 返回。
 
 等高线由二维、三维场景共享同一个开关，并按视野尺度从 GeoServer 分级请求：远景 20 米、中景 10 米、近景 2 米，避免首屏加载全部 939 条曲线。
 

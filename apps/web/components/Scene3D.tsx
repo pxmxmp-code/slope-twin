@@ -49,7 +49,6 @@ function addContours(
   C: typeof Cesium,
   source: Cesium.CustomDataSource,
   data: ContourCollection,
-  groundElevation: number,
   opacity: number,
 ) {
   const labeled = new Set<number>();
@@ -74,11 +73,7 @@ function addContours(
         )
           return [];
         return [
-          C.Cartesian3.fromDegrees(
-            coordinate[0],
-            coordinate[1],
-            elevation - groundElevation + 1,
-          ),
+          C.Cartesian3.fromDegrees(coordinate[0], coordinate[1], elevation + 1),
         ];
       });
       if (positions.length < 2) continue;
@@ -122,8 +117,9 @@ export default function Scene3D({
   layers,
   layerOrder,
   locate,
-  measureMode,
-  clearMeasureTrigger,
+  activeTool,
+  clearTrigger,
+  zoomCommand,
   autoOrbit,
   presetPitch,
   onStatus,
@@ -134,6 +130,7 @@ export default function Scene3D({
   const modelRef = useRef<Cesium.Cesium3DTileset | null>(null);
   const imageryRef = useRef<{
     basemap?: Cesium.ImageryLayer;
+    dom?: Cesium.ImageryLayer;
     labels?: Cesium.ImageryLayer;
   }>({});
   const latestLayers = useRef(layers);
@@ -157,16 +154,16 @@ export default function Scene3D({
     fid?: number;
     sourceId?: number;
   } | null>(null);
+  const [selectedFeature, setSelectedFeature] = useState<{
+    title: string;
+    rows: Array<[string, string]>;
+  } | null>(null);
 
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
   const onTelemetryChangeRef = useRef(onTelemetryChange);
   onTelemetryChangeRef.current = onTelemetryChange;
-  const measureInfo = useCesiumMeasurement(
-    viewerRef,
-    measureMode,
-    clearMeasureTrigger,
-  );
+  const measureInfo = useCesiumMeasurement(viewerRef, activeTool, clearTrigger);
 
   useEffect(() => {
     let disposed = false;
@@ -177,6 +174,12 @@ export default function Scene3D({
       onStatusRef.current("正在加载三维场景…");
       try {
         const C = await loadCesium();
+        if (disposed || !container.current) return;
+
+        const terrainProvider = await C.CesiumTerrainProvider.fromUrl(
+          config.terrainUrl,
+          { requestVertexNormals: true },
+        );
         if (disposed || !container.current) return;
 
         viewer = new C.Viewer(container.current, {
@@ -191,7 +194,7 @@ export default function Scene3D({
           fullscreenButton: false,
           selectionIndicator: false,
           infoBox: false,
-          terrainProvider: new C.EllipsoidTerrainProvider(),
+          terrainProvider,
           requestRenderMode: false,
         });
         viewerRef.current = viewer;
@@ -202,7 +205,7 @@ export default function Scene3D({
           viewer.scene.skyBox.show = false;
         }
         viewer.scene.globe.baseColor = C.Color.fromCssColorString("#e2e8f0");
-        viewer.scene.globe.depthTestAgainstTerrain = false;
+        viewer.scene.globe.depthTestAgainstTerrain = true;
         viewer.scene.backgroundColor = C.Color.fromCssColorString("#e8ecf2");
 
         // Fog & Atmosphere
@@ -232,6 +235,16 @@ export default function Scene3D({
         basemap.alpha = layers.opacity.basemap;
         imageryRef.current.basemap = basemap;
 
+        const domProvider = new C.UrlTemplateImageryProvider({
+          url: config.domTiles,
+          rectangle: C.Rectangle.fromDegrees(...config.bounds),
+          maximumLevel: 22,
+        });
+        const dom = viewer.imageryLayers.addImageryProvider(domProvider);
+        dom.show = layers.dom;
+        dom.alpha = layers.opacity.dom;
+        imageryRef.current.dom = dom;
+
         const labelsProvider = new C.UrlTemplateImageryProvider({
           url: useTianditu
             ? tiandituUrl("cva", config.tiandituToken)
@@ -254,17 +267,6 @@ export default function Scene3D({
           model.destroy();
           return;
         }
-
-        const normal = C.Ellipsoid.WGS84.geodeticSurfaceNormal(
-          model.boundingSphere.center,
-          new C.Cartesian3(),
-        );
-        const translation = C.Cartesian3.multiplyByScalar(
-          normal,
-          -config.groundElevation,
-          new C.Cartesian3(),
-        );
-        model.modelMatrix = C.Matrix4.fromTranslation(translation);
 
         viewer.scene.primitives.add(model);
         modelRef.current = model;
@@ -297,7 +299,6 @@ export default function Scene3D({
               C,
               source,
               data,
-              config.groundElevation,
               latestLayers.current.opacity.contours,
             );
             source.show = latestLayers.current.contours;
@@ -431,8 +432,9 @@ export default function Scene3D({
     };
   }, [
     config.tilesetUrl,
+    config.terrainUrl,
+    config.domTiles,
     config.tiandituToken,
-    config.groundElevation,
     config.bounds[0],
     config.bounds[1],
     config.bounds[2],
@@ -491,6 +493,10 @@ export default function Scene3D({
       img.basemap.show = layers.basemap;
       img.basemap.alpha = layers.opacity.basemap;
     }
+    if (img.dom) {
+      img.dom.show = layers.dom;
+      img.dom.alpha = layers.opacity.dom;
+    }
     if (img.labels) {
       img.labels.show = layers.labels;
       img.labels.alpha = layers.opacity.labels;
@@ -499,6 +505,8 @@ export default function Scene3D({
       const imagery =
         key === "basemap"
           ? img.basemap
+          : key === "dom"
+            ? img.dom
           : key === "labels"
             ? img.labels
             : undefined;
@@ -525,12 +533,9 @@ export default function Scene3D({
         const opacity = layers.opacity.sensors;
 
         const ent = viewer.entities.add({
-          position: C.Cartesian3.fromDegrees(
-            sensor.lon,
-            sensor.lat,
-            sensor.alt - config.groundElevation + 15,
-          ),
+          position: C.Cartesian3.fromDegrees(sensor.lon, sensor.lat, 15),
           point: {
+            heightReference: C.HeightReference.RELATIVE_TO_GROUND,
             pixelSize: 10,
             color: pinColor.withAlpha(opacity),
             outlineColor: C.Color.WHITE.withAlpha(opacity),
@@ -538,6 +543,7 @@ export default function Scene3D({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
+            heightReference: C.HeightReference.RELATIVE_TO_GROUND,
             text: `${sensor.id}\n${sensor.value}`,
             font: "11px -apple-system, BlinkMacSystemFont, sans-serif",
             fillColor: C.Color.fromCssColorString("#0f172a").withAlpha(opacity),
@@ -560,7 +566,6 @@ export default function Scene3D({
   }, [
     layers.sensors,
     layers.opacity.sensors,
-    config.groundElevation,
     viewerReady,
   ]);
 
@@ -591,11 +596,29 @@ export default function Scene3D({
     };
   }, [autoOrbit, viewerReady]);
 
-  // Feature Picking (JMD buildings) when not in measure mode
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    viewer.scene.canvas.style.cursor =
+      activeTool === "navigate" ? "" : "crosshair";
+    if (activeTool !== "query") {
+      setSelectedJmd(null);
+      setSelectedContour(null);
+      setSelectedFeature(null);
+    }
+  }, [activeTool, viewerReady]);
+
+  useEffect(() => {
+    setSelectedJmd(null);
+    setSelectedContour(null);
+    setSelectedFeature(null);
+  }, [clearTrigger]);
+
+  // Feature picking is explicitly enabled by the shared query tool.
   useEffect(() => {
     const viewer = viewerRef.current;
     const C = window.Cesium;
-    if (!viewer || !C || measureMode !== "none") return;
+    if (!viewer || !C || activeTool !== "query") return;
 
     const handler = new C.ScreenSpaceEventHandler(viewer.scene.canvas);
 
@@ -617,6 +640,7 @@ export default function Scene3D({
               ? props.sourceId.getValue()
               : undefined;
           setSelectedJmd(null);
+          setSelectedFeature(null);
           setSelectedContour({ elevation: elevationVal, fid, sourceId });
           return;
         }
@@ -650,17 +674,50 @@ export default function Scene3D({
             len: lenVal !== undefined ? Number(lenVal).toFixed(2) : "--",
           });
           setSelectedContour(null);
+          setSelectedFeature(null);
+          return;
+        }
+
+        const rows = (props.propertyNames ?? []).flatMap((name: string) => {
+          const value = props[name]?.getValue?.();
+          return value === undefined || value === null || value === ""
+            ? []
+            : ([[name, String(value)]] as Array<[string, string]>);
+        });
+        if (rows.length) {
+          setSelectedJmd(null);
+          setSelectedContour(null);
+          setSelectedFeature({ title: "要素属性", rows: rows.slice(0, 16) });
+          return;
+        }
+      }
+
+      if (picked instanceof C.Cesium3DTileFeature) {
+        const rows = picked.getPropertyIds().flatMap((name) => {
+          const value = picked.getProperty(name) as unknown;
+          return value === undefined || value === null || value === ""
+            ? []
+            : ([[name, String(value)]] as Array<[string, string]>);
+        });
+        if (rows.length) {
+          setSelectedJmd(null);
+          setSelectedContour(null);
+          setSelectedFeature({
+            title: "三维模型属性",
+            rows: rows.slice(0, 16),
+          });
           return;
         }
       }
       setSelectedJmd(null);
       setSelectedContour(null);
+      setSelectedFeature(null);
     }, C.ScreenSpaceEventType.LEFT_CLICK);
 
     return () => {
       handler.destroy();
     };
-  }, [measureMode, viewerReady]);
+  }, [activeTool, viewerReady]);
 
   // Preset Pitch & Heading
   useEffect(() => {
@@ -678,6 +735,22 @@ export default function Scene3D({
       ),
     });
   }, [presetPitch]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const model = modelRef.current;
+    const C = window.Cesium;
+    if (!viewer || !model || !C || !zoomCommand) return;
+    const amount = Math.max(
+      C.Cartesian3.distance(
+        viewer.camera.positionWC,
+        model.boundingSphere.center,
+      ) * 0.2,
+      1,
+    );
+    if (zoomCommand.direction === "in") viewer.camera.zoomIn(amount);
+    else viewer.camera.zoomOut(amount);
+  }, [zoomCommand]);
 
   // Locate trigger
   useEffect(() => {
@@ -745,9 +818,9 @@ export default function Scene3D({
       )}
 
       {/* Floating 3D Measure HUD */}
-      {measureMode !== "none" && (
+      {activeTool !== "navigate" && activeTool !== "query" && (
         <div className="measure-hud" role="region" aria-label="三维量测信息">
-          {measureMode === "distance" && (
+          {activeTool === "distance" && (
             <>
               <span className="flex items-center gap-1.5 text-sky-300 font-medium">
                 <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
@@ -775,7 +848,7 @@ export default function Scene3D({
             </>
           )}
 
-          {measureMode === "height" && (
+          {activeTool === "height" && (
             <>
               <span className="flex items-center gap-1.5 text-amber-300 font-medium">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -796,7 +869,7 @@ export default function Scene3D({
             </>
           )}
 
-          {measureMode === "coordinate" && (
+          {activeTool === "coordinate" && (
             <>
               <span className="flex items-center gap-1.5 text-sky-300 font-medium">
                 <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
@@ -824,6 +897,41 @@ export default function Scene3D({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {selectedFeature && (
+        <div
+          className="absolute bottom-4 left-4 z-20 w-72 rounded-xl border border-white/10 bg-slate-900/90 p-3.5 text-xs shadow-2xl backdrop-blur-xl"
+          role="region"
+          aria-label={selectedFeature.title}
+        >
+          <div className="mb-2.5 flex items-center justify-between border-b border-white/10 pb-2">
+            <strong className="text-[13px] font-semibold text-sky-400">
+              {selectedFeature.title}
+            </strong>
+            <button
+              type="button"
+              className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              onClick={() => setSelectedFeature(null)}
+              title="关闭"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="max-h-64 space-y-1.5 overflow-auto">
+            {selectedFeature.rows.map(([label, value]) => (
+              <div
+                key={label}
+                className="flex justify-between gap-4 border-t border-white/5 py-0.5 first:border-0"
+              >
+                <span className="text-slate-400">{label}</span>
+                <span className="break-all text-right font-mono text-slate-200">
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

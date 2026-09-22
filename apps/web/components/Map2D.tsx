@@ -166,8 +166,9 @@ export default function Map2D({
   layerOrder,
   geologyToken,
   locate,
-  measureMode,
-  clearMeasureTrigger,
+  activeTool,
+  clearTrigger,
+  zoomCommand,
   presetPitch,
   onStatus,
   onTelemetryChange,
@@ -180,8 +181,8 @@ export default function Map2D({
   onTelemetryChangeRef.current = onTelemetryChange;
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
-  const measureModeRef = useRef(measureMode);
-  measureModeRef.current = measureMode;
+  const activeToolRef = useRef(activeTool);
+  activeToolRef.current = activeTool;
   const layersRef = useRef(layers);
   layersRef.current = layers;
   const layerOrderRef = useRef(layerOrder);
@@ -189,7 +190,12 @@ export default function Map2D({
 
   const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const [measureDist, setMeasureDist] = useState(0);
+  const [pickedCoordinate, setPickedCoordinate] = useState<
+    [number, number] | null
+  >(null);
   const sensorMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const geologyRequestRef = useRef<AbortController | null>(null);
 
   // 1. Initialize Mapbox GL instance ONCE
   const token = config.mapboxToken;
@@ -230,8 +236,6 @@ export default function Map2D({
     mapRef.current = map;
     let contourInterval = 20;
     let contourLodReady = false;
-    let geologyRequest: AbortController | undefined;
-
     const scaleControl = new mapboxgl.ScaleControl({ unit: "metric" });
     map.addControl(scaleControl, "bottom-left");
 
@@ -257,7 +261,7 @@ export default function Map2D({
     });
 
     map.on("click", (e) => {
-      if (measureModeRef.current === "distance") {
+      if (activeToolRef.current === "distance") {
         const pt: [number, number] = [e.lngLat.lng, e.lngLat.lat];
         setMeasurePoints((prev) => {
           const next = [...prev, pt];
@@ -291,6 +295,20 @@ export default function Map2D({
         return;
       }
 
+      if (activeToolRef.current === "coordinate") {
+        const point: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        setPickedCoordinate(point);
+        const source = map.getSource("measure-src") as
+          mapboxgl.GeoJSONSource | undefined;
+        source?.setData({
+          type: "Feature",
+          properties: {},
+          geometry: { type: "Point", coordinates: point },
+        });
+        return;
+      }
+
+      if (activeToolRef.current !== "query") return;
       if (!config.geologyAvailable || !layersRef.current.geology) return;
       const vectorLayers = [
         "jmd-fill",
@@ -316,11 +334,11 @@ export default function Map2D({
         x: String(Math.round(e.point.x)),
         y: String(Math.round(e.point.y)),
       });
-      geologyRequest?.abort();
-      geologyRequest = new AbortController();
+      geologyRequestRef.current?.abort();
+      geologyRequestRef.current = new AbortController();
       onStatusRef.current("正在查询地质属性…");
       void fetch(`/api/geology/info?${params}`, {
-        signal: geologyRequest.signal,
+        signal: geologyRequestRef.current.signal,
         headers: geologyToken
           ? { "X-Geocloud-Token": geologyToken }
           : undefined,
@@ -330,7 +348,12 @@ export default function Map2D({
           return (await response.json()) as unknown;
         })
         .then((value) => {
-          new mapboxgl.Popup({ className: "jmd-popup", maxWidth: "360px" })
+          if (activeToolRef.current !== "query") return;
+          popupRef.current?.remove();
+          popupRef.current = new mapboxgl.Popup({
+            className: "jmd-popup",
+            maxWidth: "360px",
+          })
             .setLngLat(e.lngLat)
             .setDOMContent(geologyPopupContent(value))
             .addTo(map);
@@ -573,20 +596,24 @@ export default function Map2D({
             properties?: Record<string, unknown>;
           }
         )?.properties;
-        if (!properties || measureModeRef.current !== "none") return;
-        new mapboxgl.Popup({ className: "jmd-popup", maxWidth: "220px" })
+        if (!properties || activeToolRef.current !== "query") return;
+        popupRef.current?.remove();
+        popupRef.current = new mapboxgl.Popup({
+          className: "jmd-popup",
+          maxWidth: "220px",
+        })
           .setLngLat(event.lngLat)
           .setDOMContent(contourPopupContent(properties))
           .addTo(map);
       };
       for (const layer of ["contour-minor", "contour-major"]) {
         map.on("mouseenter", layer, () => {
-          if (measureModeRef.current === "none")
+          if (activeToolRef.current === "query")
             map.getCanvas().style.cursor = "pointer";
         });
         map.on("mouseleave", layer, () => {
-          if (measureModeRef.current === "none")
-            map.getCanvas().style.cursor = "";
+          map.getCanvas().style.cursor =
+            activeToolRef.current === "navigate" ? "" : "crosshair";
         });
         map.on("click", layer, showContour);
       }
@@ -606,25 +633,25 @@ export default function Map2D({
 
       // Hover and click interaction on residential buildings
       map.on("mouseenter", "jmd-fill", () => {
-        if (measureModeRef.current === "none") {
+        if (activeToolRef.current === "query") {
           map.getCanvas().style.cursor = "pointer";
         }
       });
       map.on("mouseleave", "jmd-fill", () => {
-        if (measureModeRef.current === "none") {
-          map.getCanvas().style.cursor = "";
-        }
+        map.getCanvas().style.cursor =
+          activeToolRef.current === "navigate" ? "" : "crosshair";
       });
 
       map.on("click", "jmd-fill", (e) => {
-        if (measureModeRef.current !== "none") return;
+        if (activeToolRef.current !== "query") return;
         if (!e.features?.[0]) return;
         const feat = e.features[0] as unknown as {
           properties?: Record<string, unknown>;
         };
         const props = (feat.properties || {}) as JmdProperties;
 
-        new mapboxgl.Popup({
+        popupRef.current?.remove();
+        popupRef.current = new mapboxgl.Popup({
           closeButton: true,
           closeOnClick: true,
           className: "jmd-popup",
@@ -660,13 +687,28 @@ export default function Map2D({
 
     return () => {
       ro.disconnect();
-      geologyRequest?.abort();
+      geologyRequestRef.current?.abort();
+      geologyRequestRef.current = null;
+      popupRef.current?.remove();
+      popupRef.current = null;
       for (const marker of sensorMarkersRef.current) marker.remove();
       sensorMarkersRef.current = [];
       mapRef.current = null;
       map.remove();
     };
   }, [token, boundsKey, domTiles, tiandituToken, geologyToken]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getCanvas().style.cursor = activeTool === "navigate" ? "" : "crosshair";
+    if (activeTool !== "query") {
+      geologyRequestRef.current?.abort();
+      geologyRequestRef.current = null;
+      popupRef.current?.remove();
+      popupRef.current = null;
+    }
+  }, [activeTool]);
 
   function mLayerExists(map: mapboxgl.Map, id: string) {
     try {
@@ -790,12 +832,17 @@ export default function Map2D({
   useEffect(() => {
     setMeasurePoints([]);
     setMeasureDist(0);
+    setPickedCoordinate(null);
+    geologyRequestRef.current?.abort();
+    geologyRequestRef.current = null;
+    popupRef.current?.remove();
+    popupRef.current = null;
     const m = mapRef.current;
     if (m && m.getSource("measure-src")) {
       const src = m.getSource("measure-src") as mapboxgl.GeoJSONSource;
       src.setData({ type: "FeatureCollection", features: [] });
     }
-  }, [clearMeasureTrigger]);
+  }, [clearTrigger]);
 
   // 5. Preset Pitch & Heading
   useEffect(() => {
@@ -807,6 +854,15 @@ export default function Map2D({
     });
   }, [presetPitch]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !zoomCommand) return;
+    map.easeTo({
+      zoom: map.getZoom() + (zoomCommand.direction === "in" ? 1 : -1),
+      duration: 250,
+    });
+  }, [zoomCommand]);
+
   // 6. Locate trigger
   useEffect(() => {
     mapRef.current?.fitBounds(config.bounds, { padding: 80, duration: 800 });
@@ -817,7 +873,7 @@ export default function Map2D({
       <div ref={container} className="map-canvas" />
 
       {/* Floating Measurement HUD */}
-      {measureMode === "distance" && (
+      {activeTool === "distance" && (
         <div className="measure-hud" role="region" aria-label="测距信息">
           <span className="flex items-center gap-1.5 text-sky-300 font-medium">
             <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
@@ -837,6 +893,27 @@ export default function Map2D({
           <span className="text-slate-400 text-xs pl-2 border-l border-white/10">
             在地图上点击添加折线测距点
           </span>
+        </div>
+      )}
+
+      {activeTool === "coordinate" && (
+        <div className="measure-hud" role="region" aria-label="坐标拾取信息">
+          <span className="flex items-center gap-1.5 text-sky-300 font-medium">
+            <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+            坐标拾取
+          </span>
+          {pickedCoordinate ? (
+            <span className="flex items-center gap-3 pl-2 border-l border-white/10 font-mono text-xs">
+              经度:{" "}
+              <b className="text-sky-300">{pickedCoordinate[0].toFixed(6)}°</b>
+              纬度:{" "}
+              <b className="text-sky-300">{pickedCoordinate[1].toFixed(6)}°</b>
+            </span>
+          ) : (
+            <span className="text-slate-400 text-xs pl-2 border-l border-white/10">
+              在地图上点击拾取点位
+            </span>
+          )}
         </div>
       )}
 

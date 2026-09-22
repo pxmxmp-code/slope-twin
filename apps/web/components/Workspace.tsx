@@ -19,10 +19,11 @@ import {
   DEFAULT_LAYERS,
   DEFAULT_LAYER_ORDER,
   DEFAULT_TELEMETRY,
-  type MeasureType,
+  type MapTool,
   type PresetPitch,
   type Telemetry,
   type ViewMode,
+  type ZoomCommand,
 } from "./types";
 import { useSceneConfig } from "./useSceneConfig";
 import { Button } from "./ui/button";
@@ -40,8 +41,9 @@ export default function Workspace() {
   const [layerPanelOpen, setLayerPanelOpen] = useState(true);
   const [locate, setLocate] = useState(0);
   const [status, setStatus] = useState("正在连接数字孪生底座…");
-  const [measureMode, setMeasureMode] = useState<MeasureType>("none");
-  const [clearMeasure, setClearMeasure] = useState(0);
+  const [activeTool, setActiveTool] = useState<MapTool>("navigate");
+  const [clearTrigger, setClearTrigger] = useState(0);
+  const [zoomCommand, setZoomCommand] = useState<ZoomCommand | null>(null);
   const [autoOrbit, setAutoOrbit] = useState(false);
   const [presetPitch, setPresetPitch] = useState<PresetPitch | null>(null);
   const [telemetry, setTelemetry] = useState(DEFAULT_TELEMETRY);
@@ -71,7 +73,7 @@ export default function Workspace() {
     setMode(next as ViewMode);
     setStatus("正在切换孪生视窗…");
     setAutoOrbit(false);
-    setMeasureMode("none");
+    setActiveTool("navigate");
   }
 
   function toggleFullscreen() {
@@ -86,8 +88,9 @@ export default function Workspace() {
         layerOrder,
         geologyToken,
         locate,
-        measureMode,
-        clearMeasureTrigger: clearMeasure,
+        activeTool,
+        clearTrigger,
+        zoomCommand,
         presetPitch,
         onStatus: setStatus,
         onTelemetryChange: updateTelemetry,
@@ -162,18 +165,33 @@ export default function Workspace() {
             <MapToolbar
               mode={mode}
               telemetry={telemetry}
-              measureMode={measureMode}
+              activeTool={activeTool}
               autoOrbit={autoOrbit}
-              onMeasureMode={setMeasureMode}
+              onToolChange={(tool) => {
+                setActiveTool(tool);
+                if (tool !== "navigate") setAutoOrbit(false);
+              }}
               onPresetPitch={setPresetPitch}
-              onToggleOrbit={() => setAutoOrbit((value) => !value)}
-              onClearMeasure={() => setClearMeasure(Date.now())}
+              onZoom={(direction) => setZoomCommand({ direction })}
+              onToggleOrbit={() => {
+                setAutoOrbit((value) => !value);
+                setActiveTool("navigate");
+              }}
+              onClear={() => setClearTrigger(Date.now())}
             />
 
             <div className="help">
-              {mode === "2d"
-                ? "🖱️ 左键拖动平移 · 滚轮缩放 · 右键旋转俯仰"
-                : "🖱️ 左键旋转视角 · 滚轮缩放 · 中键平移 · 双击聚焦点"}
+              {activeTool === "query"
+                ? "ⓘ 点击地图要素查询属性 · 再次点击查询按钮退出"
+                : activeTool === "distance"
+                  ? "📏 点击地图连续添加测距点"
+                  : activeTool === "height"
+                    ? "↕ 点击三维模型选择两个高程点"
+                    : activeTool === "coordinate"
+                      ? "⌖ 点击地图拾取空间坐标"
+                      : mode === "2d"
+                        ? "🖱️ 左键拖动平移 · 滚轮缩放 · 右键旋转俯仰"
+                        : "🖱️ 左键旋转视角 · 滚轮缩放 · 中键平移 · 双击聚焦点"}
             </div>
           </TabsContent>
         </section>

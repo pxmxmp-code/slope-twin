@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     geocloud_wms_layers: str = ",".join(f"t{i}" for i in range(13))
     minio_endpoint: str = "http://192.168.1.110:29000"
     minio_bucket: str = "slope-twin"
-    ground_elevation: float = 1208
 
     @field_validator("dom_bounds")
     @classmethod
@@ -54,6 +53,6 @@ class Settings(BaseSettings):
             "bounds": self.dom_bounds,
             "domTiles": "/api/dom/{z}/{x}/{y}.png",
             "tilesetUrl": "/tiles/tileset.json",
-            "groundElevation": self.ground_elevation,
+            "terrainUrl": "/tiles/terrain/",
             "geologyAvailable": bool(self.geocloud_wms_url),
         }

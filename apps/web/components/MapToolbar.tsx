@@ -1,47 +1,92 @@
 import {
-  Compass,
   Crosshair,
-  Eye,
+  Hand,
+  Info,
   Mountain,
   Navigation2,
   Orbit,
-  RotateCw,
   Ruler,
   Trash2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
-import type { MeasureType, PresetPitch, Telemetry, ViewMode } from "./types";
+import type { MapTool, PresetPitch, Telemetry, ViewMode } from "./types";
 
 type Props = {
   mode: ViewMode;
   telemetry: Telemetry;
-  measureMode: MeasureType;
+  activeTool: MapTool;
   autoOrbit: boolean;
-  onMeasureMode: (mode: MeasureType) => void;
+  onToolChange: (tool: MapTool) => void;
   onPresetPitch: (pitch: PresetPitch) => void;
+  onZoom: (direction: "in" | "out") => void;
   onToggleOrbit: () => void;
-  onClearMeasure: () => void;
+  onClear: () => void;
 };
 
 export function MapToolbar({
   mode,
   telemetry,
-  measureMode,
+  activeTool,
   autoOrbit,
-  onMeasureMode,
+  onToolChange,
   onPresetPitch,
+  onZoom,
   onToggleOrbit,
-  onClearMeasure,
+  onClear,
 }: Props) {
-  const toggleMeasure = (next: MeasureType) =>
-    onMeasureMode(measureMode === next ? "none" : next);
+  const toggleTool = (next: MapTool) =>
+    onToolChange(activeTool === next ? "navigate" : next);
 
   const headingVal = Math.round(telemetry.heading ?? 0);
   // Normalized heading 0-359
   const normalizedHeading = ((headingVal % 360) + 360) % 360;
 
   return (
-    <div className="gis-toolbox">
+    <div className="gis-toolbox" role="toolbar" aria-label="地图通用工具">
+      <div className="gis-btn-group" aria-label="交互工具">
+        <button
+          type="button"
+          className={`gis-btn ${activeTool === "navigate" ? "active" : ""}`}
+          title="漫游平移（默认）"
+          aria-label="漫游平移"
+          aria-pressed={activeTool === "navigate"}
+          onClick={() => onToolChange("navigate")}
+        >
+          <Hand className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          className={`gis-btn ${activeTool === "query" ? "active" : ""}`}
+          title="要素属性查询（点击启用）"
+          aria-label="要素属性查询"
+          aria-pressed={activeTool === "query"}
+          onClick={() => toggleTool("query")}
+        >
+          <Info className="w-4 h-4" />
+        </button>
+        <div className="w-5 h-px bg-white/10 mx-auto my-0.5" />
+        <button
+          type="button"
+          className="gis-btn"
+          title="放大"
+          aria-label="放大"
+          onClick={() => onZoom("in")}
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          className="gis-btn"
+          title="缩小"
+          aria-label="缩小"
+          onClick={() => onZoom("out")}
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+      </div>
+
       {/* Group 1: 视角、罗盘与巡检 */}
       <div className="gis-btn-group" title="视点导航与航向">
         {/* Modern Compass with Dual-Color Needle */}
@@ -143,12 +188,13 @@ export function MapToolbar({
         <button
           type="button"
           className={`gis-btn ${
-            measureMode === "distance"
+            activeTool === "distance"
               ? "active bg-sky-500 text-white shadow-[0_0_12px_rgba(56,189,248,0.6)]"
               : ""
           }`}
           title="空间直线与水平测距"
-          onClick={() => toggleMeasure("distance")}
+          aria-pressed={activeTool === "distance"}
+          onClick={() => toggleTool("distance")}
         >
           <Ruler className="w-4 h-4" />
         </button>
@@ -158,12 +204,13 @@ export function MapToolbar({
           <button
             type="button"
             className={`gis-btn ${
-              measureMode === "height"
+              activeTool === "height"
                 ? "active bg-amber-500 text-white shadow-[0_0_12px_rgba(245,158,11,0.6)]"
                 : ""
             }`}
             title="垂直落差与高差测量"
-            onClick={() => toggleMeasure("height")}
+            aria-pressed={activeTool === "height"}
+            onClick={() => toggleTool("height")}
           >
             <Mountain className="w-4 h-4" />
           </button>
@@ -173,30 +220,27 @@ export function MapToolbar({
         <button
           type="button"
           className={`gis-btn ${
-            measureMode === "coordinate"
+            activeTool === "coordinate"
               ? "active bg-sky-500 text-white shadow-[0_0_12px_rgba(56,189,248,0.6)]"
               : ""
           }`}
-          title="三维空间坐标拾取探测"
-          onClick={() => toggleMeasure("coordinate")}
+          title="空间坐标拾取"
+          aria-pressed={activeTool === "coordinate"}
+          onClick={() => toggleTool("coordinate")}
         >
           <Crosshair className="w-4 h-4" />
         </button>
 
-        {/* Clear Measurements */}
-        {measureMode !== "none" && (
-          <>
-            <div className="w-5 h-px bg-white/10 mx-auto my-0.5" />
-            <button
-              type="button"
-              className="gis-btn text-rose-400 hover:text-white hover:bg-rose-500/30 transition-colors"
-              title="清除空间测量标记与记录"
-              onClick={onClearMeasure}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </>
-        )}
+        <div className="w-5 h-px bg-white/10 mx-auto my-0.5" />
+        <button
+          type="button"
+          className="gis-btn text-rose-400 hover:text-white hover:bg-rose-500/30 transition-colors"
+          title="清除查询与量测结果"
+          aria-label="清除查询与量测结果"
+          onClick={onClear}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );
