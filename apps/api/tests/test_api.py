@@ -75,3 +75,50 @@ def test_geoserver_errors_are_not_served_as_images(settings, upstream_status, bo
         assert response.status_code == 502
         assert response.headers["content-type"].startswith("application/json")
         app.state.http = original
+
+
+def test_features_unconfigured(settings):
+    app = create_app(settings)
+    with TestClient(app) as client:
+        assert client.get("/api/features/jmd").status_code == 503
+
+
+def test_minio_tiles_proxy_and_health(tmp_path):
+    # 当本地没有 tileset.json 时，测试通过 MinIO 代理请求与健康检查
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    settings = Settings(
+        _env_file=None,
+        tiles_directory=str(empty_dir),
+        database_url="",
+        minio_endpoint="http://mock-minio:9000",
+        minio_bucket="slope-twin",
+    )
+
+    def mock_minio(request: httpx.Request):
+        if "tileset.json" in str(request.url):
+            return httpx.Response(200, json={"asset": {"version": "1.1"}})
+        if "tile.b3dm" in str(request.url):
+            return httpx.Response(200, content=b"b3dm_mock_data", headers={"content-type": "application/octet-stream"})
+        return httpx.Response(404, text="not found")
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        app.state.http = httpx.AsyncClient(transport=httpx.MockTransport(mock_minio))
+        # 测试健康检查通过 MinIO 确认 tileset ok
+        health_resp = client.get("/api/health")
+        assert health_resp.status_code == 200
+        assert health_resp.json()["tileset"] == "ok"
+
+        # 测试瓦片代理
+        tile_resp = client.get("/tiles/tileset.json")
+        assert tile_resp.status_code == 200
+        assert "asset" in tile_resp.json()
+
+        b3dm_resp = client.get("/tiles/tile.b3dm")
+        assert b3dm_resp.status_code == 200
+        assert b3dm_resp.content == b"b3dm_mock_data"
+
+        # 路径遍历拦截
+        assert client.get("/tiles/../secret").status_code == 404
+

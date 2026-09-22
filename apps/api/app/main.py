@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 import httpx
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
@@ -30,7 +31,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
 
     app = FastAPI(title="Slope Twin API", lifespan=lifespan)
-    app.mount("/tiles", StaticFiles(directory=settings.tiles_path, check_dir=False), name="tiles")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    if (settings.tiles_path / "tileset.json").is_file():
+        app.mount("/tiles", StaticFiles(directory=settings.tiles_path, check_dir=False), name="tiles")
+    else:
+        @app.api_route("/tiles/{file_path:path}", methods=["GET", "HEAD"])
+        async def proxy_tiles(file_path: str, request: Request):
+            if ".." in file_path or file_path.startswith("/"):
+                raise HTTPException(404, "无效的文件路径")
+            if not settings.minio_endpoint:
+                raise HTTPException(404, "瓦片文件未找到且未配置 MinIO")
+            minio_url = f"{settings.minio_endpoint.rstrip('/')}/{settings.minio_bucket}/tiles/{file_path}"
+            client: httpx.AsyncClient = request.app.state.http
+            req_headers = {}
+            for h in ("range", "if-none-match", "if-modified-since"):
+                if h in request.headers:
+                    req_headers[h] = request.headers[h]
+            try:
+                req = client.build_request(request.method, minio_url, headers=req_headers)
+                res = await client.send(req, stream=True)
+                if res.status_code >= 400:
+                    await res.aclose()
+                    raise HTTPException(res.status_code, "瓦片未找到")
+                resp_headers = {}
+                for h in ("content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified", "cache-control"):
+                    if h in res.headers:
+                        resp_headers[h] = res.headers[h]
+
+                async def body_stream():
+                    try:
+                        async for chunk in res.aiter_bytes():
+                            yield chunk
+                    finally:
+                        await res.aclose()
+
+                return StreamingResponse(
+                    body_stream(),
+                    status_code=res.status_code,
+                    headers=resp_headers,
+                )
+            except httpx.RequestError as e:
+                raise HTTPException(502, f"MinIO 代理失败: {e}")
 
     @app.get("/api/config")
     async def config():
@@ -40,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tiandituToken": settings.tianditu_token,
             "bounds": settings.dom_bounds,
             "domTiles": "/api/dom/{z}/{x}/{y}.png",
-            "tilesetUrl": "/tiles/tileset.json",
+            "tilesetUrl": settings.tileset_url or "/tiles/tileset.json",
         }
 
     @app.get("/api/health")
@@ -55,8 +103,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 database = "ok"
             except psycopg.Error:
                 database = "unavailable"
-        return {"api": "ok", "database": database,
-                "tileset": "ok" if (settings.tiles_path / "tileset.json").is_file() else "missing"}
+
+        tileset_ok = (settings.tiles_path / "tileset.json").is_file()
+        if not tileset_ok and settings.minio_endpoint and hasattr(request.app.state, "http"):
+            try:
+                minio_url = f"{settings.minio_endpoint.rstrip('/')}/{settings.minio_bucket}/tiles/tileset.json"
+                r = await request.app.state.http.head(minio_url, timeout=3.0)
+                tileset_ok = (r.status_code == 200)
+            except Exception:
+                tileset_ok = False
+
+        return {
+            "api": "ok",
+            "database": database,
+            "tileset": "ok" if tileset_ok else "missing",
+        }
+
+    @app.get("/api/features/jmd")
+    async def features_jmd():
+        if not settings.database_url:
+            raise HTTPException(503, "数据库连接未配置")
+        try:
+            async with await psycopg.AsyncConnection.connect(settings.database_url, connect_timeout=5) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT json_build_object('type', 'FeatureCollection', 'features', "
+                        "COALESCE(json_agg(ST_AsGeoJSON(t.*)::json), '[]'::json)) "
+                        "FROM (SELECT id, xm, rs, shape_length, shape_area, ST_Transform(geom, 4326) AS geom FROM jmd) AS t;"
+                    )
+                    row = await cur.fetchone()
+                    return row[0] if row and row[0] else {"type": "FeatureCollection", "features": []}
+        except psycopg.Error as error:
+            raise HTTPException(502, f"查询要素失败: {error}") from error
 
     @app.get("/api/dom/{z}/{x}/{y}.png")
     async def dom(z: int, x: int, y: int, request: Request):

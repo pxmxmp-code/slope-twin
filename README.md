@@ -9,13 +9,17 @@ slope-twin/
 ├── apps/
 │   ├── web/                 # Next.js App Router、Mapbox GL JS、Cesium、shadcn/ui
 │   └── api/                 # FastAPI、WMS 适配、模型静态服务、PostgreSQL 连接检查
-├── data/                   # 原始资料与处理结果，不纳入 Git
-│   └── TILES/tileset.json  # 现有 3D Tiles 根入口
-├── tests/                  # 浏览器集成检查
-├── .env                    # 唯一的本地配置文件，不纳入 Git
-├── .env.example            # 配置模板
-├── package.json            # npm workspace 与统一任务入口
-└── package-lock.json       # 前端依赖锁；Python 依赖由 apps/api/uv.lock 锁定
+├── data/                    # 原始资料与处理结果，不纳入 Git
+│   ├── TILES/tileset.json  # 现有 3D Tiles 根入口
+│   ├── postgres/           # 统一数据库持久化目录（单套存储，杜绝冗余）
+│   └── minio/              # MinIO 对象存储数据目录（存储 DOM_COG.tif、3D Tiles 等）
+├── docker/                  # web 与 api Dockerfile 构建定义
+├── docker-compose.yml       # 单套统一容器编排配置（web / api / db / minio）
+├── tests/                   # 浏览器集成检查
+├── .env                     # 本地配置文件，不纳入 Git
+├── .env.example             # 统一配置模板
+├── package.json             # npm workspace 与统一任务入口
+└── package-lock.json        # 前端依赖锁；Python 依赖由 apps/api/uv.lock 锁定
 ```
 
 前端用 npm workspaces 管理，Python 应用用 uv 独立管理。暂无共享业务代码，暂不建立空的 `packages` 包。
@@ -36,18 +40,91 @@ rtk npm run dev
 
 生产构建：`rtk npm run build`，然后运行 `rtk npm run start:web` 和 `rtk npm run start:api`。开发命令支持前后端热重载，生产启动不启用热重载。正式部署的进程托管、HTTPS 与权限管理另行配置。
 
+## 局域网协同开发指南（服务器 IP: 192.168.1.110）
+
+本项目的数据底座（PostGIS 数据库、MinIO 对象存储、GeoServer WFS/WMS 影像与要素服务）已统一在服务器 `192.168.1.110` 上部署完毕。**在局域网内其他电脑进行开发时，无需在本地拷贝大文件或部署数据库，直接复用服务器资源即可**。
+
+### 1. 服务器公开发布的服务与端口一览
+
+| 服务组件 | 宿主机/局域网访问地址 | 认证信息 / 说明 |
+| --- | --- | --- |
+| **Web 前端界面** | `http://192.168.1.110:23002` | 浏览器直接访问实景平台 |
+| **FastAPI 后端 API** | `http://192.168.1.110:8000` | 提供健康检查、配置分发、要素查询及瓦片代理 |
+| **PostgreSQL + PostGIS** | `192.168.1.110:25432` | 库名 `slope_twin`，用户 `slope_twin` / 密码 `slope_twin_password`，含 `jmd` 等要素图层 |
+| **MinIO S3 对象存储** | `http://192.168.1.110:29000` | 存储 DOM_COG.tif 及完整 3D Tiles 资产，Bucket: `slope-twin`（只读公开） |
+| **MinIO Web 管理控制台** | `http://192.168.1.110:29001` | 管理员账号 `minioadmin` / 密码 `minioadmin123` |
+| **GeoServer 服务** | `http://192.168.1.110:8080/geoserver` | 工作区 `ne`，发布 `ne:DOM_COG`（影像来自 MinIO）与 `ne:jmd`（要素来自 PostGIS） |
+
+### 2. 局域网其他电脑开发前端（Web）
+
+1. 克隆代码后，在项目根目录执行：
+   ```bash
+   cp .env.example .env
+   ```
+2. 确认 `.env` 中已指向服务器：
+   ```env
+   BACKEND_URL=http://192.168.1.110:8000
+   ```
+3. 启动本地前端：
+   ```bash
+   npm install
+   npm run dev
+   ```
+   本地 Next.js 会自动将 `/api/*`、`/tiles/*` 等请求反向代理至服务器 `192.168.1.110:8000`，三维实景与正射影像即可无缝加载。
+
+### 3. 局域网其他电脑开发后端（API）
+
+若需要在其他电脑调试 Python FastAPI 后端：
+1. 复制 `.env.example` 为 `.env`；
+2. 配置直连服务器各项服务：
+   ```env
+   DATABASE_URL=postgresql://slope_twin:slope_twin_password@192.168.1.110:25432/slope_twin
+   GEOSERVER_WMS_URL=http://192.168.1.110:8080/geoserver/ne/wms
+   MINIO_ENDPOINT=http://192.168.1.110:29000
+   MINIO_BUCKET=slope-twin
+   TILESET_URL=http://192.168.1.110:29000/slope-twin/tiles/tileset.json
+   ```
+3. 本地启动 FastAPI：
+   ```bash
+   uv sync --project apps/api
+   uv run --project apps/api uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+## Docker 与容器化运行
+
+项目移除了原先 dev/prod 双环境 Docker 配置，统一仅保留单套 [docker-compose.yml](file:///workspace/code/slope-twin/docker-compose.yml)，数据库数据统一持久化存储到 `./data/postgres`，对象存储数据持久化到 `./data/minio`，后续导入数据仅需针对该单一存储，杜绝多环境导致的数据冗余。
+
+- **仅启动数据库与对象存储**（推荐本地开发调试或导入数据时使用）：
+  ```bash
+  docker compose up -d db minio
+  ```
+  - PostgreSQL 宿主机端口：`25432`（库名 `slope_twin`，含 PostGIS 扩展）
+  - MinIO API 端口：`29000`，控制台端口：`29001`（默认账号密码 `minioadmin / minioadmin123`）
+- **启动完整栈**（包含前端 Web `23002`、后端 API `8000`、数据库 `25432` 与 MinIO `29000`）：
+  ```bash
+  docker compose up -d
+  ```
+- **停止服务**：
+  ```bash
+  docker compose down
+  ```
+
 ## 一个 .env 可以配置什么
+
+复制模板开始配置：`cp .env.example .env`。
 
 | 配置 | 对应功能 | 当前是否需要填写 |
 | --- | --- | --- |
 | `MAPBOX_TOKEN` | Mapbox GL JS 二维地图引擎，承载天地图和 DOM | 二维需要；填 Mapbox 的 `pk.` 公共 token |
 | `TIANDITU_TOKEN` | 天地图电子地图 `vec_w`、中文注记 `cva_w`；也用于三维电子底图 | 需要这些底图时填写天地图 Web 端应用 key |
-| `GEOSERVER_WMS_URL` | 后端请求 DOM 的 WMS 服务 | 已填现有服务地址 |
+| `GEOSERVER_WMS_URL` | 后端请求 DOM 的 WMS 服务 | 已填现有服务地址（Docker 内访问宿主机填 `http://host.docker.internal:8080/geoserver/ne/wms`） |
 | `GEOSERVER_DOM_LAYER` | 指定 DOM 图层 | 已填 `ne:DOM_COG` |
 | `DOM_BOUNDS` | 二维初始定位与 DOM 请求范围 | 已按现有服务填写，顺序为西、南、东、北经纬度 |
 | `TILES_DIRECTORY` | 发布已转换的 3D Tiles 数据目录 | 已填 `data/TILES`，相对仓库根目录 |
 | `BACKEND_URL` | Next.js 的同源代理目标 | 本机默认 `http://127.0.0.1:8000` |
-| `DATABASE_URL` | PostgreSQL 连接与健康检查 | 可留空；填 `postgresql://用户名:密码@主机:端口/数据库` |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL 数据库认证及库名 | 默认用户 `slope_twin`、库名 `slope_twin` |
+| `POSTGRES_PORT` / `WEB_PORT` / `API_PORT` | Docker 映射端口 | 默认数据库 `25432`、前端 `23002`、后端 `8000` |
+| `DATABASE_URL` | PostgreSQL 连接串与健康检查 | 容器内填 `postgresql://...db:5432/slope_twin`，宿主机直连填 `...127.0.0.1:25432/slope_twin` |
 
 修改 `.env` 后重启前后端并刷新页面；修改 `BACKEND_URL` 后生产模式需重新构建前端。
 

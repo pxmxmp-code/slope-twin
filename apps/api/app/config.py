@@ -16,6 +16,9 @@ class Settings(BaseSettings):
         98.87636822220345, 27.04721825778342, 98.8879329074003, 27.05324393689146
     )
     tiles_directory: str = "data/TILES"
+    tileset_url: str = "/tiles/tileset.json"
+    minio_endpoint: str = "http://minio:9000"
+    minio_bucket: str = "slope-twin"
     database_url: str = ""
 
     @field_validator("dom_bounds")
@@ -29,4 +32,11 @@ class Settings(BaseSettings):
     @property
     def tiles_path(self) -> Path:
         path = Path(self.tiles_directory)
-        return path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+        if path.is_absolute():
+            return path.resolve()
+        # 兼容 Docker 镜像 (/app) 与 本地工程根目录
+        for parent in (Path(__file__).resolve().parents[2], ROOT):
+            candidate = parent / path
+            if candidate.exists():
+                return candidate.resolve()
+        return (ROOT / path).resolve()
