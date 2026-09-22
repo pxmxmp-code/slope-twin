@@ -14,6 +14,13 @@ function isSceneConfig(value: unknown): value is SceneConfig {
     typeof config.domTiles === "string" &&
     typeof config.tilesetUrl === "string" &&
     typeof config.terrainUrl === "string" &&
+    typeof config.cesiumIonAccessToken === "string" &&
+    (typeof config.cesiumIonTerrainAssetId === "number" ||
+      config.cesiumIonTerrainAssetId === null) &&
+    (typeof config.cesiumIonImageryAssetId === "number" ||
+      config.cesiumIonImageryAssetId === null) &&
+    typeof config.modelHeightOffset === "number" &&
+    Number.isFinite(config.modelHeightOffset) &&
     typeof config.geologyAvailable === "boolean"
   );
 }

@@ -45,6 +45,80 @@ type ContourCollection = {
   }>;
 };
 
+type ModelFootprintCollection = {
+  features?: Array<{
+    geometry?: { type?: string; coordinates?: unknown };
+  }>;
+};
+
+async function loadModelFootprint(
+  C: typeof Cesium,
+): Promise<Cesium.ClippingPolygon[]> {
+  const response = await fetch("/api/features/model-footprint");
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const collection = (await response.json()) as ModelFootprintCollection;
+
+  const positions = (ring: unknown) => {
+    if (!Array.isArray(ring)) return [];
+    const coordinates = ring.flatMap((coordinate) =>
+      Array.isArray(coordinate) &&
+      typeof coordinate[0] === "number" &&
+      typeof coordinate[1] === "number"
+        ? [coordinate.slice(0, 2) as [number, number]]
+        : [],
+    );
+    if (
+      coordinates.length > 3 &&
+      coordinates[0][0] === coordinates.at(-1)?.[0] &&
+      coordinates[0][1] === coordinates.at(-1)?.[1]
+    )
+      coordinates.pop();
+    return C.Cartesian3.fromDegreesArray(coordinates.flat());
+  };
+
+  return (collection.features ?? []).flatMap((feature) => {
+    const geometry = feature.geometry;
+    const polygons =
+      geometry?.type === "Polygon"
+        ? [geometry.coordinates]
+        : geometry?.type === "MultiPolygon"
+          ? geometry.coordinates
+          : [];
+    if (!Array.isArray(polygons)) return [];
+    return polygons.flatMap((polygon) => {
+      if (!Array.isArray(polygon)) return [];
+      const outer = positions(polygon[0]);
+      if (outer.length < 3) return [];
+      const holes = polygon
+        .slice(1)
+        .map(positions)
+        .filter((ring) => ring.length >= 3);
+      return [new C.ClippingPolygon({ positions: outer, holes })];
+    });
+  });
+}
+
+function setModelHeight(
+  C: typeof Cesium,
+  model: Cesium.Cesium3DTileset,
+  position: Cesium.Cartographic,
+  offset: number,
+) {
+  const original = C.Cartesian3.fromRadians(
+    position.longitude,
+    position.latitude,
+    position.height,
+  );
+  const adjusted = C.Cartesian3.fromRadians(
+    position.longitude,
+    position.latitude,
+    position.height + offset,
+  );
+  model.modelMatrix = C.Matrix4.fromTranslation(
+    C.Cartesian3.subtract(adjusted, original, new C.Cartesian3()),
+  );
+}
+
 function addContours(
   C: typeof Cesium,
   source: Cesium.CustomDataSource,
@@ -116,6 +190,7 @@ export default function Scene3D({
   config,
   layers,
   layerOrder,
+  modelHeightOffset,
   locate,
   activeTool,
   clearTrigger,
@@ -128,6 +203,7 @@ export default function Scene3D({
   const container = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const modelRef = useRef<Cesium.Cesium3DTileset | null>(null);
+  const modelPositionRef = useRef<Cesium.Cartographic | null>(null);
   const imageryRef = useRef<{
     basemap?: Cesium.ImageryLayer;
     dom?: Cesium.ImageryLayer;
@@ -135,6 +211,8 @@ export default function Scene3D({
   }>({});
   const latestLayers = useRef(layers);
   latestLayers.current = layers;
+  const latestModelHeightOffset = useRef(modelHeightOffset);
+  latestModelHeightOffset.current = modelHeightOffset;
 
   const sensorEntitiesRef = useRef<Cesium.Entity[]>([]);
   const orbitListenerRef = useRef<(() => void) | null>(null);
@@ -176,8 +254,14 @@ export default function Scene3D({
         const C = await loadCesium();
         if (disposed || !container.current) return;
 
+        const terrainResource =
+          config.cesiumIonTerrainAssetId && config.cesiumIonAccessToken
+            ? await C.IonResource.fromAssetId(config.cesiumIonTerrainAssetId, {
+                accessToken: config.cesiumIonAccessToken,
+              })
+            : config.terrainUrl;
         const terrainProvider = await C.CesiumTerrainProvider.fromUrl(
-          config.terrainUrl,
+          terrainResource,
           { requestVertexNormals: true },
         );
         if (disposed || !container.current) return;
@@ -204,9 +288,9 @@ export default function Scene3D({
         if (viewer.scene.skyBox) {
           viewer.scene.skyBox.show = false;
         }
-        viewer.scene.globe.baseColor = C.Color.fromCssColorString("#e2e8f0");
+        viewer.scene.globe.baseColor = C.Color.fromCssColorString("#182432");
         viewer.scene.globe.depthTestAgainstTerrain = true;
-        viewer.scene.backgroundColor = C.Color.fromCssColorString("#e8ecf2");
+        viewer.scene.backgroundColor = C.Color.fromCssColorString("#07111f");
 
         // Fog & Atmosphere
         viewer.scene.fog.enabled = true;
@@ -222,17 +306,22 @@ export default function Scene3D({
         );
 
         const useTianditu = Boolean(config.tiandituToken);
-        const basemapProvider = new C.UrlTemplateImageryProvider({
-          url: useTianditu
-            ? tiandituUrl("vec", config.tiandituToken)
-            : CARTO_LIGHT_TILES,
-          maximumLevel: useTianditu ? 18 : 19,
-          credit: useTianditu ? "© 天地图" : undefined,
-        });
+        const basemapProvider =
+          config.cesiumIonImageryAssetId && config.cesiumIonAccessToken
+            ? await C.IonImageryProvider.fromAssetId(
+                config.cesiumIonImageryAssetId,
+                { accessToken: config.cesiumIonAccessToken },
+              )
+            : new C.UrlTemplateImageryProvider({
+                url: CARTO_LIGHT_TILES,
+                maximumLevel: 19,
+              });
         const basemap =
           viewer.imageryLayers.addImageryProvider(basemapProvider);
         basemap.show = layers.basemap;
         basemap.alpha = layers.opacity.basemap;
+        basemap.saturation = 0.72;
+        basemap.brightness = 0.8;
         imageryRef.current.basemap = basemap;
 
         const domProvider = new C.UrlTemplateImageryProvider({
@@ -267,7 +356,28 @@ export default function Scene3D({
           model.destroy();
           return;
         }
-
+        const position = C.Cartographic.fromCartesian(
+          model.boundingSphere.center,
+        );
+        modelPositionRef.current = position;
+        setModelHeight(C, model, position, latestModelHeightOffset.current);
+        if (C.ClippingPolygonCollection.isSupported(viewer.scene)) {
+          try {
+            const polygons = await loadModelFootprint(C);
+            if (polygons.length)
+              viewer.scene.globe.clippingPolygons =
+                new C.ClippingPolygonCollection({
+                  enabled: latestLayers.current.model,
+                  polygons,
+                });
+          } catch (error) {
+            console.warn("Failed to build terrain clipping footprint:", error);
+          }
+        }
+        if (disposed || viewer.isDestroyed()) {
+          model.destroy();
+          return;
+        }
         viewer.scene.primitives.add(model);
         modelRef.current = model;
         model.show = latestLayers.current.model;
@@ -295,12 +405,7 @@ export default function Scene3D({
             )
               return;
             const source = new C.CustomDataSource(`contours-${interval}m`);
-            addContours(
-              C,
-              source,
-              data,
-              latestLayers.current.opacity.contours,
-            );
+            addContours(C, source, data, latestLayers.current.opacity.contours);
             source.show = latestLayers.current.contours;
             await viewer.dataSources.add(source);
             if (contourDataSourceRef.current)
@@ -425,6 +530,7 @@ export default function Scene3D({
       jmdDataSourceRef.current = null;
       contourDataSourceRef.current = null;
       modelRef.current = null;
+      modelPositionRef.current = null;
       viewerRef.current = null;
       imageryRef.current = {};
       sensorEntitiesRef.current = [];
@@ -433,6 +539,9 @@ export default function Scene3D({
   }, [
     config.tilesetUrl,
     config.terrainUrl,
+    config.cesiumIonAccessToken,
+    config.cesiumIonTerrainAssetId,
+    config.cesiumIonImageryAssetId,
     config.domTiles,
     config.tiandituToken,
     config.bounds[0],
@@ -440,6 +549,16 @@ export default function Scene3D({
     config.bounds[2],
     config.bounds[3],
   ]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const model = modelRef.current;
+    const position = modelPositionRef.current;
+    const C = window.Cesium;
+    if (!viewer || !model || !position || !C) return;
+    setModelHeight(C, model, position, modelHeightOffset);
+    viewer.scene.requestRender();
+  }, [modelHeightOffset, viewerReady]);
 
   // Update Layers & Visual Options
   useEffect(() => {
@@ -454,6 +573,8 @@ export default function Scene3D({
         color: `color('white', ${layers.opacity.model})`,
       });
     }
+    if (viewer.scene.globe.clippingPolygons)
+      viewer.scene.globe.clippingPolygons.enabled = layers.model;
 
     if (jmdDataSourceRef.current) {
       jmdDataSourceRef.current.show = layers.jmd;
@@ -507,9 +628,9 @@ export default function Scene3D({
           ? img.basemap
           : key === "dom"
             ? img.dom
-          : key === "labels"
-            ? img.labels
-            : undefined;
+            : key === "labels"
+              ? img.labels
+              : undefined;
       if (imagery) viewer.imageryLayers.raiseToTop(imagery);
     }
     viewer.scene.requestRender();
@@ -544,7 +665,7 @@ export default function Scene3D({
           },
           label: {
             heightReference: C.HeightReference.RELATIVE_TO_GROUND,
-            text: `${sensor.id}\n${sensor.value}`,
+            text: isWarning ? `${sensor.id}\n${sensor.value}` : sensor.id,
             font: "11px -apple-system, BlinkMacSystemFont, sans-serif",
             fillColor: C.Color.fromCssColorString("#0f172a").withAlpha(opacity),
             outlineColor: C.Color.WHITE.withAlpha(opacity),
@@ -563,11 +684,7 @@ export default function Scene3D({
         sensorEntitiesRef.current.push(ent);
       });
     }
-  }, [
-    layers.sensors,
-    layers.opacity.sensors,
-    viewerReady,
-  ]);
+  }, [layers.sensors, layers.opacity.sensors, viewerReady]);
 
   // Orbit / Auto Cruise
   useEffect(() => {

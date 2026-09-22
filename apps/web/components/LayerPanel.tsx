@@ -48,8 +48,10 @@ type Props = {
   config: SceneConfig | null;
   layers: Layers;
   layerOrder: LayerKey[];
+  modelHeightOffset: number;
   setLayers: Dispatch<SetStateAction<Layers>>;
   setLayerOrder: Dispatch<SetStateAction<LayerKey[]>>;
+  onModelHeightOffsetChange: (value: number) => void;
   onGeologyTokenChange: (token: string) => void;
   onLocate: () => void;
   onClose: () => void;
@@ -121,12 +123,12 @@ const DEFINITIONS: Record<LayerKey, LayerDefinition> = {
     type: "3D Tiles",
   },
   basemap: {
-    name: "电子底图",
-    description: "基础地形与道路水系网",
+    name: "卫星影像底图",
+    description: "项目范围外的区域环境背景",
     category: "base",
     badge: "基础",
     icon: <Globe2 />,
-    source: "天地图 / Carto",
+    source: "Mapbox Satellite / Cesium ion",
     type: "栅格瓦片",
   },
 };
@@ -137,8 +139,10 @@ export function LayerPanel({
   config,
   layers,
   layerOrder,
+  modelHeightOffset,
   setLayers,
   setLayerOrder,
+  onModelHeightOffsetChange,
   onGeologyTokenChange,
   onLocate,
   onClose,
@@ -424,6 +428,23 @@ export function LayerPanel({
               />
               <output>{Math.round(layers.opacity[selectedKey] * 100)}%</output>
             </div>
+            {mode === "3d" && selectedKey === "model" && (
+              <div className="detail-setting">
+                <label>模型高程校准</label>
+                <Slider
+                  aria-label="模型高程校准"
+                  min={-100}
+                  max={100}
+                  step={1}
+                  value={[modelHeightOffset]}
+                  onValueChange={([value]) => onModelHeightOffsetChange(value)}
+                />
+                <output>
+                  {modelHeightOffset > 0 ? "+" : ""}
+                  {modelHeightOffset} m
+                </output>
+              </div>
+            )}
             <div className="detail-order">
               <span>
                 <small>叠放顺序</small>

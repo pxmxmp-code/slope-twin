@@ -1,3 +1,4 @@
+import json
 import math
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import Settings
 from app.main import create_app
+from scripts.publish_model_footprint import leaf_tiles
 
 
 @pytest.fixture
@@ -18,6 +20,10 @@ def settings():
         _env_file=None,
         database_url="",
         mapbox_token="public-test-token",
+        cesium_ion_access_token="ion-test-token",
+        cesium_ion_terrain_asset_id="5910083",
+        cesium_ion_imagery_asset_id="3830182",
+        model_height_offset=-40,
         minio_endpoint="http://objects.test",
         minio_bucket="slope-twin",
         geocloud_wms_url="https://geology.test/wms?tk=secret",
@@ -32,6 +38,17 @@ def use_mock_http(app, handler):
     return original
 
 
+def test_leaf_tiles_follow_external_tileset(tmp_path):
+    child = tmp_path / "child.json"
+    child.write_text(json.dumps({"root": {"content": {"uri": "leaf.glb"}}}))
+    root = tmp_path / "tileset.json"
+    root.write_text(
+        json.dumps({"root": {"content": {"uri": "child.json"}}})
+    )
+
+    assert leaf_tiles(root) == [(tmp_path / "leaf.glb").resolve()]
+
+
 def test_public_config_excludes_private_settings(settings):
     settings.database_url = "postgresql://private:secret@localhost/test"
     with TestClient(create_app(settings)) as client:
@@ -41,6 +58,10 @@ def test_public_config_excludes_private_settings(settings):
     assert response.json()["mapboxToken"] == "public-test-token"
     assert response.json()["tilesetUrl"] == "/tiles/tileset.json"
     assert response.json()["terrainUrl"] == "/tiles/terrain/"
+    assert response.json()["cesiumIonAccessToken"] == "ion-test-token"
+    assert response.json()["cesiumIonTerrainAssetId"] == 5910083
+    assert response.json()["cesiumIonImageryAssetId"] == 3830182
+    assert response.json()["modelHeightOffset"] == -40
     assert response.json()["geologyAvailable"] is True
     assert "secret" not in response.text
     assert "geoserver" not in response.text.lower()
@@ -182,6 +203,34 @@ def test_contours_are_loaded_from_geoserver_wfs(settings):
 def test_contours_reject_unsupported_interval(settings):
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/features/contours?interval=3").status_code == 422
+
+
+def test_model_footprint_is_loaded_from_geoserver_wfs(settings):
+    seen: list[httpx.Request] = []
+    collection = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "MultiPolygon", "coordinates": []},
+                "properties": {"id": 1},
+            }
+        ],
+    }
+
+    def upstream(request: httpx.Request):
+        seen.append(request)
+        return httpx.Response(200, json=collection)
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        original = use_mock_http(app, upstream)
+        response = client.get("/api/features/model-footprint")
+        app.state.infrastructure.http = original
+
+    assert response.json() == collection
+    assert seen[0].url.params["typeNames"] == "ne:model_footprint"
+    assert seen[0].url.params["srsName"] == "EPSG:4326"
 
 
 def test_geology_tiles_proxy_all_queryable_layers_with_token_last(settings):

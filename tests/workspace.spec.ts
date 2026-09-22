@@ -76,3 +76,42 @@ test("backend failure is visible and retryable", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "重新连接" })).toBeVisible();
 });
+
+test("layer settings survive a reload", async ({ page }) => {
+  await page.route("**/api/config", (route) =>
+    route.fulfill({
+      json: {
+        mapboxToken: "",
+        tiandituToken: "",
+        bounds: [98.87, 27.04, 98.89, 27.06],
+        domTiles: "/api/dom/{z}/{x}/{y}.png",
+        tilesetUrl: "/tiles/tileset.json",
+        terrainUrl: "/tiles/terrain",
+        cesiumIonAccessToken: "",
+        cesiumIonTerrainAssetId: null,
+        geologyAvailable: false,
+      },
+    }),
+  );
+  await page.goto("/");
+
+  await page.getByRole("switch", { name: "JMD 居民地要素" }).click();
+  await page.getByRole("button", { name: "配置JMD 居民地要素" }).click();
+  const opacity = page.getByRole("slider", {
+    name: "JMD 居民地要素不透明度",
+  });
+  await opacity.focus();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowRight");
+  await page.getByRole("button", { name: "上移图层" }).click();
+
+  await page.reload();
+  await expect(
+    page.getByRole("switch", { name: "JMD 居民地要素" }),
+  ).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("button", { name: "配置JMD 居民地要素" }).click();
+  await expect(
+    page.getByRole("slider", { name: "JMD 居民地要素不透明度" }),
+  ).toHaveAttribute("aria-valuenow", "1");
+  await expect(page.getByText("第 2 层", { exact: true })).toBeVisible();
+});

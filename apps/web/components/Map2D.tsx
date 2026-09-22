@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import {
   CARTO_LIGHT_LABELS,
-  CARTO_LIGHT_TILES,
   DEFAULT_SENSORS,
   tiandituUrl,
   type ViewProps,
@@ -369,18 +368,20 @@ export default function Map2D({
       const useTianditu = Boolean(tiandituToken);
       map.addSource("basemap-src", {
         type: "raster",
-        tiles: [
-          useTianditu ? tiandituUrl("vec", tiandituToken) : CARTO_LIGHT_TILES,
-        ],
+        url: "mapbox://mapbox.satellite",
         tileSize: 256,
-        maxzoom: useTianditu ? 18 : 19,
       });
       map.addLayer({
         id: "basemap",
         type: "raster",
         source: "basemap-src",
         layout: { visibility: "visible" },
-        paint: { "raster-opacity": layersRef.current.opacity.basemap },
+        paint: {
+          "raster-opacity": layersRef.current.opacity.basemap,
+          "raster-saturation": -0.35,
+          "raster-contrast": -0.08,
+          "raster-brightness-max": 0.78,
+        },
       });
 
       map.addSource("labels-src", {

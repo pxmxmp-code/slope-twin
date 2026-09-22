@@ -254,6 +254,24 @@ class Infrastructure:
         except (httpx.HTTPError, ValueError) as error:
             raise HTTPException(502, "等高线服务不可用，请检查 GeoServer") from error
 
+    async def model_footprint(self) -> dict[str, object]:
+        try:
+            response = await self.http.get(
+                self.settings.geoserver_wfs_url,
+                params={
+                    "service": "WFS",
+                    "version": "2.0.0",
+                    "request": "GetFeature",
+                    "typeNames": "ne:model_footprint",
+                    "outputFormat": "application/json",
+                    "srsName": "EPSG:4326",
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as error:
+            raise HTTPException(502, "实景模型覆盖边界服务不可用") from error
+
     async def open_object(
         self, method: str, path: str, headers: dict[str, str]
     ) -> httpx.Response:

@@ -1433,6 +1433,10 @@ input:focus-visible {
   gap: 10px;
 }
 
+.detail-setting + .detail-setting {
+  margin-top: 16px;
+}
+
 .detail-setting label {
   grid-column: 1 / -1;
   color: #d8e1ec;

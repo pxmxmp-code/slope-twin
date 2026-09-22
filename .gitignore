@@ -5,7 +5,6 @@ node_modules/
 .next/
 apps/web/public/cesium/
 .venv/
-.venv-windows/
 __pycache__/
 .pytest_cache/
 *.tsbuildinfo

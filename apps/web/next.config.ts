@@ -2,11 +2,13 @@ import type { NextConfig } from "next";
 import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
 
-loadEnv({ path: resolve(__dirname, "../../.env"), quiet: true });
+const projectRoot = resolve(process.cwd(), "../..");
+
+loadEnv({ path: resolve(projectRoot, ".env"), quiet: true });
 
 const config: NextConfig = {
   output: "standalone",
-  outputFileTracingRoot: resolve(__dirname, "../.."),
+  outputFileTracingRoot: projectRoot,
   webpack(config, { dev }) {
     if (dev)
       config.watchOptions = {

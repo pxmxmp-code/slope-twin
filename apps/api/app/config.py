@@ -18,6 +18,10 @@ class Settings(BaseSettings):
 
     mapbox_token: str = ""
     tianditu_token: str = ""
+    cesium_ion_access_token: str = ""
+    cesium_ion_terrain_asset_id: str = ""
+    cesium_ion_imagery_asset_id: str = ""
+    model_height_offset: float = -40
     dom_bounds: tuple[float, float, float, float] = (
         98.87636822220345,
         27.04721825778342,
@@ -54,5 +58,17 @@ class Settings(BaseSettings):
             "domTiles": "/api/dom/{z}/{x}/{y}.png",
             "tilesetUrl": "/tiles/tileset.json",
             "terrainUrl": "/tiles/terrain/",
+            "cesiumIonAccessToken": self.cesium_ion_access_token,
+            "cesiumIonTerrainAssetId": (
+                int(self.cesium_ion_terrain_asset_id)
+                if self.cesium_ion_terrain_asset_id.isdigit()
+                else None
+            ),
+            "cesiumIonImageryAssetId": (
+                int(self.cesium_ion_imagery_asset_id)
+                if self.cesium_ion_imagery_asset_id.isdigit()
+                else None
+            ),
+            "modelHeightOffset": self.model_height_offset,
             "geologyAvailable": bool(self.geocloud_wms_url),
         }

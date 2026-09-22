@@ -19,6 +19,8 @@ import {
   DEFAULT_LAYERS,
   DEFAULT_LAYER_ORDER,
   DEFAULT_TELEMETRY,
+  type LayerKey,
+  type Layers,
   type MapTool,
   type PresetPitch,
   type Telemetry,
@@ -32,12 +34,64 @@ import { WorkspaceHeader } from "./WorkspaceHeader";
 
 const Map2D = dynamic(() => import("./Map2D"), { ssr: false });
 const Scene3D = dynamic(() => import("./Scene3D"), { ssr: false });
+const LAYER_CONFIG_KEY = "slope-twin-layer-config-v2";
+
+function readLayerConfig(): { layers: Layers; layerOrder: LayerKey[] } {
+  try {
+    const value: unknown = JSON.parse(
+      localStorage.getItem(LAYER_CONFIG_KEY) ?? "null",
+    );
+    if (!value || typeof value !== "object") throw new Error();
+    const saved = value as {
+      layers?: Record<string, unknown>;
+      layerOrder?: unknown;
+    };
+    const savedOpacity =
+      saved.layers?.opacity && typeof saved.layers.opacity === "object"
+        ? (saved.layers.opacity as Record<string, unknown>)
+        : {};
+    const layers: Layers = {
+      ...DEFAULT_LAYERS,
+      opacity: { ...DEFAULT_LAYERS.opacity },
+    };
+
+    for (const key of DEFAULT_LAYER_ORDER) {
+      if (typeof saved.layers?.[key] === "boolean")
+        layers[key] = saved.layers[key];
+      const opacity = savedOpacity[key];
+      if (typeof opacity === "number" && opacity >= 0 && opacity <= 1)
+        layers.opacity[key] = opacity;
+    }
+
+    const savedOrder = Array.isArray(saved.layerOrder)
+      ? [
+          ...new Set(
+            saved.layerOrder.filter(
+              (key): key is LayerKey =>
+                typeof key === "string" &&
+                DEFAULT_LAYER_ORDER.includes(key as LayerKey),
+            ),
+          ),
+        ]
+      : [];
+    return {
+      layers,
+      layerOrder: [
+        ...savedOrder,
+        ...DEFAULT_LAYER_ORDER.filter((key) => !savedOrder.includes(key)),
+      ],
+    };
+  } catch {
+    return { layers: DEFAULT_LAYERS, layerOrder: DEFAULT_LAYER_ORDER };
+  }
+}
 
 export default function Workspace() {
   const { config, error, retry } = useSceneConfig();
   const [mode, setMode] = useState<ViewMode>("2d");
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
   const [layerOrder, setLayerOrder] = useState(DEFAULT_LAYER_ORDER);
+  const [layerConfigLoaded, setLayerConfigLoaded] = useState(false);
   const [layerPanelOpen, setLayerPanelOpen] = useState(true);
   const [locate, setLocate] = useState(0);
   const [status, setStatus] = useState("正在连接数字孪生底座…");
@@ -49,6 +103,9 @@ export default function Workspace() {
   const [telemetry, setTelemetry] = useState(DEFAULT_TELEMETRY);
   const [fullscreen, setFullscreen] = useState(false);
   const [geologyToken, setGeologyToken] = useState("");
+  const [modelHeightOffset, setModelHeightOffset] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     const update = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -58,7 +115,19 @@ export default function Workspace() {
 
   useEffect(() => {
     setGeologyToken(localStorage.getItem("geocloud-token") ?? "");
+    const saved = readLayerConfig();
+    setLayers(saved.layers);
+    setLayerOrder(saved.layerOrder);
+    setLayerConfigLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (!layerConfigLoaded) return;
+    localStorage.setItem(
+      LAYER_CONFIG_KEY,
+      JSON.stringify({ layers, layerOrder }),
+    );
+  }, [layerConfigLoaded, layerOrder, layers]);
 
   function updateGeologyToken(token: string) {
     localStorage.setItem("geocloud-token", token);
@@ -86,6 +155,7 @@ export default function Workspace() {
         config,
         layers,
         layerOrder,
+        modelHeightOffset: modelHeightOffset ?? config.modelHeightOffset,
         geologyToken,
         locate,
         activeTool,
@@ -154,8 +224,12 @@ export default function Workspace() {
               config={config}
               layers={layers}
               layerOrder={layerOrder}
+              modelHeightOffset={
+                modelHeightOffset ?? config?.modelHeightOffset ?? 0
+              }
               setLayers={setLayers}
               setLayerOrder={setLayerOrder}
+              onModelHeightOffsetChange={setModelHeightOffset}
               onGeologyTokenChange={updateGeologyToken}
               onLocate={() => setLocate((value) => value + 1)}
               onClose={() => setLayerPanelOpen(false)}

@@ -5,6 +5,10 @@ export type SceneConfig = {
   domTiles: string;
   tilesetUrl: string;
   terrainUrl: string;
+  cesiumIonAccessToken: string;
+  cesiumIonTerrainAssetId: number | null;
+  cesiumIonImageryAssetId: number | null;
+  modelHeightOffset: number;
   geologyAvailable: boolean;
 };
 
@@ -59,6 +63,7 @@ export type ViewProps = {
   config: SceneConfig;
   layers: Layers;
   layerOrder: LayerKey[];
+  modelHeightOffset: number;
   geologyToken?: string;
   locate: number;
   activeTool: MapTool;
@@ -72,22 +77,22 @@ export type ViewProps = {
 
 export const DEFAULT_LAYERS: Layers = {
   basemap: true,
-  labels: true,
+  labels: false,
   dom: true,
   model: true,
   sensors: true,
-  jmd: true,
-  contours: true,
-  geology: true,
+  jmd: false,
+  contours: false,
+  geology: false,
   opacity: {
-    basemap: 1,
+    basemap: 0.85,
     labels: 1,
     dom: 1,
     model: 1,
     sensors: 1,
-    jmd: 0.45,
-    contours: 0.75,
-    geology: 0.82,
+    jmd: 0.15,
+    contours: 0.65,
+    geology: 0.6,
   },
 };
 

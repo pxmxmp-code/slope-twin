@@ -33,16 +33,8 @@ docker-compose.yml             # 仅 web + api
 
 要求 Node.js 22、npm、Python 3.12+ 和 uv。首次启动会自动安装前后端依赖并从 `.env.example` 创建 `.env`。
 
-Linux / macOS：
-
 ```bash
 ./dev.sh
-```
-
-Windows PowerShell：
-
-```powershell
-.\start.cmd
 ```
 
 打开 <http://127.0.0.1:3000>。Web 在 `127.0.0.1:3000`，API 在 `127.0.0.1:8000`，两者都有热更新。

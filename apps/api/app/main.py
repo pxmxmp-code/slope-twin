@@ -74,6 +74,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "等高线间距只支持 2、10 或 20 米")
         return await infrastructure(request).contours(interval)
 
+    @app.get("/api/features/model-footprint")
+    async def model_footprint(request: Request):
+        return await infrastructure(request).model_footprint()
+
     @app.get("/api/dom/{z}/{x}/{y}.png")
     async def dom_tile(z: int, x: int, y: int, request: Request):
         content = await infrastructure(request).dom_png(z, x, y)
