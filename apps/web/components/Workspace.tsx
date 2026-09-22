@@ -46,6 +46,7 @@ export default function Workspace() {
     opacity: 1,
     basemapType: "light",
     sensors: true,
+    jmd: true,
     wireframe: false,
     visualMode: "natural",
     enableSun: false,
@@ -298,36 +299,7 @@ export default function Workspace() {
                 </div>
 
                 <div className="panel-body">
-                  <div className="section-label">基础底图</div>
-                  <div className="basemap-grid">
-                    {(
-                      [
-                        { id: "light", label: "☀️ 清新浅色" },
-                        { id: "satellite", label: "🛰️ 遥感影像" },
-                        { id: "vector", label: "🗺️ 电子矢量" },
-                        { id: "dark", label: "🌌 暗夜科技" },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`basemap-card ${
-                          layers.basemapType === item.id ? "active" : ""
-                        }`}
-                        onClick={() =>
-                          setLayers((l) => ({
-                            ...l,
-                            basemap: true,
-                            basemapType: item.id,
-                          }))
-                        }
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="section-label mt-1">图层开关</div>
+                  <div className="section-label">图层开关</div>
                   {layerRow(
                     "basemap",
                     "天地图电子地图",
@@ -344,6 +316,7 @@ export default function Workspace() {
                       layers.basemapType !== "light" &&
                       layers.basemapType !== "dark",
                   )}
+                  {layerRow("jmd", "JMD 居民地要素", "建筑物与居住区范围矢量")}
 
                   {mode === "2d" ? (
                     <>

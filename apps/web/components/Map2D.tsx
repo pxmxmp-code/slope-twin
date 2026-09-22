@@ -344,6 +344,98 @@ export default function Map2D({
         },
       });
 
+      // 6. JMD Feature Layer (Residential buildings)
+      map.addSource("jmd-src", {
+        type: "geojson",
+        data: "/api/features/jmd",
+      });
+      map.addLayer({
+        id: "jmd-fill",
+        type: "fill",
+        source: "jmd-src",
+        layout: {
+          visibility: layersRef.current.jmd ? "visible" : "none",
+        },
+        paint: {
+          "fill-color": "#3b82f6",
+          "fill-opacity": 0.45,
+        },
+      });
+      map.addLayer({
+        id: "jmd-line",
+        type: "line",
+        source: "jmd-src",
+        layout: {
+          visibility: layersRef.current.jmd ? "visible" : "none",
+        },
+        paint: {
+          "line-color": "#1d4ed8",
+          "line-width": 2,
+        },
+      });
+
+      // Hover and click interaction on residential buildings
+      map.on("mouseenter", "jmd-fill", () => {
+        if (measureModeRef.current === "none") {
+          map.getCanvas().style.cursor = "pointer";
+        }
+      });
+      map.on("mouseleave", "jmd-fill", () => {
+        if (measureModeRef.current === "none") {
+          map.getCanvas().style.cursor = "";
+        }
+      });
+
+      map.on("click", "jmd-fill", (e) => {
+        if (measureModeRef.current !== "none") return;
+        if (!e.features?.[0]) return;
+        const feat = e.features[0] as unknown as {
+          properties?: Record<string, unknown>;
+        };
+        const props = (feat.properties || {}) as {
+          id?: number;
+          xm?: string;
+          rs?: number;
+          shape_length?: number;
+          shape_area?: number;
+        };
+        const area =
+          props.shape_area !== undefined
+            ? Number(props.shape_area).toFixed(2)
+            : "--";
+        const len =
+          props.shape_length !== undefined
+            ? Number(props.shape_length).toFixed(2)
+            : "--";
+
+        new mapboxgl.Popup({
+          closeButton: true,
+          closeOnClick: true,
+          className: "jmd-popup",
+          maxWidth: "280px",
+        })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #1e293b; padding: 4px;">
+              <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                <span>🏠 居民地要素</span>
+                <span style="font-size: 11px; color: #2563eb; background: #eff6ff; padding: 1px 6px; border-radius: 4px;">ID #${props.id ?? ""}</span>
+              </div>
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; line-height: 1.5;">
+                <span style="color: #64748b;">项目标识:</span>
+                <span style="font-weight: 600; color: #0f172a;">${props.xm ?? "--"}</span>
+                <span style="color: #64748b;">常住人口:</span>
+                <span style="font-weight: 600; color: #2563eb;">${props.rs ?? 0} 人</span>
+                <span style="color: #64748b;">占地面积:</span>
+                <span style="font-weight: 600; color: #0f172a;">${area} ㎡</span>
+                <span style="color: #64748b;">轮廓周长:</span>
+                <span style="font-weight: 600; color: #0f172a;">${len} m</span>
+              </div>
+            </div>`,
+          )
+          .addTo(map);
+      });
+
       // Apply initial layers state
       const state = layersRef.current;
       if (mLayerExists(map, "dom")) {
@@ -435,12 +527,28 @@ export default function Map2D({
       m.setLayoutProperty("dom", "visibility", layers.dom ? "visible" : "none");
       m.setPaintProperty("dom", "raster-opacity", layers.opacity);
     }
+
+    if (mLayerExists(m, "jmd-fill")) {
+      m.setLayoutProperty(
+        "jmd-fill",
+        "visibility",
+        layers.jmd ? "visible" : "none",
+      );
+    }
+    if (mLayerExists(m, "jmd-line")) {
+      m.setLayoutProperty(
+        "jmd-line",
+        "visibility",
+        layers.jmd ? "visible" : "none",
+      );
+    }
   }, [
     layers.basemap,
     layers.basemapType,
     layers.labels,
     layers.dom,
     layers.opacity,
+    layers.jmd,
   ]);
 
   // 3. Sensor markers

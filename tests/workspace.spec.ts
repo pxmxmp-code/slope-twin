@@ -27,6 +27,17 @@ test("missing tokens, layer controls, and real local 3D model", async ({
   await expect(
     page.getByRole("slider", { name: "影像透明度" }),
   ).toHaveAttribute("aria-valuenow", "1");
+  await expect(
+    page.getByRole("switch", { name: "JMD 居民地要素" }),
+  ).toBeVisible();
+  await page.getByRole("switch", { name: "JMD 居民地要素" }).click();
+  await expect(
+    page.getByRole("switch", { name: "JMD 居民地要素" }),
+  ).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("switch", { name: "JMD 居民地要素" }).click();
+  await expect(
+    page.getByRole("switch", { name: "JMD 居民地要素" }),
+  ).toHaveAttribute("aria-checked", "true");
   await page.screenshot({ path: "test-results/workspace-2d.png" });
   const glb = page.waitForResponse(
     (response) => response.url().endsWith(".glb") && response.status() === 200,

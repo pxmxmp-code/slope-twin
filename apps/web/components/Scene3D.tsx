@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import type * as Cesium from "cesium";
 import {
   CARTO_DARK_LABELS,
@@ -67,6 +68,15 @@ export default function Scene3D({
   const measureEntitiesRef = useRef<Cesium.Entity[]>([]);
   const sensorEntitiesRef = useRef<Cesium.Entity[]>([]);
   const orbitListenerRef = useRef<(() => void) | null>(null);
+
+  const jmdDataSourceRef = useRef<Cesium.GeoJsonDataSource | null>(null);
+  const [selectedJmd, setSelectedJmd] = useState<{
+    id?: number;
+    xm?: string;
+    rs?: number;
+    area?: string;
+    len?: string;
+  } | null>(null);
 
   const [measureInfo, setMeasureInfo] = useState<{
     pointsCount: number;
@@ -213,6 +223,31 @@ export default function Scene3D({
         modelRef.current = model;
         model.show = latestLayers.current.model;
 
+        // 4. Load JMD Feature Service (Residential Buildings)
+        void C.GeoJsonDataSource.load("/api/features/jmd", {
+          clampToGround: true,
+        })
+          .then((jmdSource) => {
+            if (!disposed && viewer && !viewer.isDestroyed()) {
+              for (const entity of jmdSource.entities.values) {
+                if (entity.polygon) {
+                  entity.polygon.classificationType = new C.ConstantProperty(
+                    C.ClassificationType.BOTH,
+                  );
+                  entity.polygon.material = new C.ColorMaterialProperty(
+                    C.Color.fromCssColorString("#3b82f6").withAlpha(0.55),
+                  );
+                }
+              }
+              void viewer.dataSources.add(jmdSource);
+              jmdDataSourceRef.current = jmdSource;
+              jmdSource.show = latestLayers.current.jmd;
+            }
+          })
+          .catch((jmdErr) => {
+            console.warn("Failed to load JMD in Cesium:", jmdErr);
+          });
+
         let failed = false;
         model.tileFailed.addEventListener(() => {
           failed = true;
@@ -273,6 +308,12 @@ export default function Scene3D({
         orbitListenerRef.current();
         orbitListenerRef.current = null;
       }
+      if (jmdDataSourceRef.current && viewer && !viewer.isDestroyed()) {
+        try {
+          viewer.dataSources.remove(jmdDataSourceRef.current, true);
+        } catch {}
+      }
+      jmdDataSourceRef.current = null;
       modelRef.current = null;
       viewerRef.current = null;
       imageryRef.current = {};
@@ -301,6 +342,13 @@ export default function Scene3D({
       (model as unknown as { debugWireframe?: boolean }).debugWireframe =
         layers.wireframe;
       model.style = undefined;
+    }
+
+    if (jmdDataSourceRef.current) {
+      jmdDataSourceRef.current.show = layers.jmd;
+    }
+    if (!layers.jmd) {
+      setSelectedJmd(null);
     }
 
     const img = imageryRef.current;
@@ -623,6 +671,58 @@ export default function Scene3D({
     setMeasureInfo({ pointsCount: 0 });
   }, [clearMeasureTrigger]);
 
+  // Feature Picking (JMD buildings) when not in measure mode
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const C = window.Cesium;
+    if (!viewer || !C || measureMode !== "none") return;
+
+    const handler = new C.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+    handler.setInputAction((click: { position: Cesium.Cartesian2 }) => {
+      const picked = viewer.scene.pick(click.position);
+      if (picked && picked.id && picked.id.properties) {
+        const props = picked.id.properties;
+        const idVal =
+          typeof props.id?.getValue === "function"
+            ? props.id.getValue()
+            : undefined;
+        const xmVal =
+          typeof props.xm?.getValue === "function"
+            ? props.xm.getValue()
+            : undefined;
+        const rsVal =
+          typeof props.rs?.getValue === "function"
+            ? props.rs.getValue()
+            : undefined;
+        const areaVal =
+          typeof props.shape_area?.getValue === "function"
+            ? props.shape_area.getValue()
+            : undefined;
+        const lenVal =
+          typeof props.shape_length?.getValue === "function"
+            ? props.shape_length.getValue()
+            : undefined;
+
+        if (idVal !== undefined || xmVal !== undefined) {
+          setSelectedJmd({
+            id: idVal,
+            xm: xmVal,
+            rs: rsVal,
+            area: areaVal !== undefined ? Number(areaVal).toFixed(2) : "--",
+            len: lenVal !== undefined ? Number(lenVal).toFixed(2) : "--",
+          });
+          return;
+        }
+      }
+      setSelectedJmd(null);
+    }, C.ScreenSpaceEventType.LEFT_CLICK);
+
+    return () => {
+      handler.destroy();
+    };
+  }, [measureMode]);
+
   // Preset Pitch & Heading
   useEffect(() => {
     const model = modelRef.current;
@@ -720,6 +820,56 @@ export default function Scene3D({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {/* Floating 3D Selected JMD Card */}
+      {selectedJmd && layers.jmd && (
+        <div
+          className="absolute top-16 right-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl p-3.5 shadow-xl w-64 text-xs"
+          role="region"
+          aria-label="居民地要素详情"
+        >
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+            <div className="flex items-center gap-1.5 font-bold text-slate-800 text-sm">
+              <span>🏠</span>
+              <span>居民地要素 #{selectedJmd.id ?? ""}</span>
+            </div>
+            <button
+              type="button"
+              className="text-slate-400 hover:text-slate-700 p-0.5 rounded transition-colors"
+              onClick={() => setSelectedJmd(null)}
+              title="关闭"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="space-y-1.5 text-slate-600">
+            <div className="flex justify-between items-center">
+              <span>项目标识</span>
+              <span className="font-semibold text-slate-800">
+                {selectedJmd.xm || "--"}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>常住人口</span>
+              <span className="font-semibold text-blue-600">
+                {selectedJmd.rs ?? 0} 人
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>建筑面积</span>
+              <span className="font-semibold text-slate-800">
+                {selectedJmd.area} ㎡
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>轮廓周长</span>
+              <span className="font-semibold text-slate-800">
+                {selectedJmd.len} m
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </>

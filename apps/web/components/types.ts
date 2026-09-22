@@ -33,6 +33,7 @@ export type Layers = {
   opacity: number;
   basemapType: BasemapType;
   sensors: boolean;
+  jmd: boolean;
   // 3D visual & environment effects
   wireframe: boolean;
   visualMode: VisualMode;
