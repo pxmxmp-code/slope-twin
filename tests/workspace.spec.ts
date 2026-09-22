@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-test("missing tokens, layer controls, and real local 3D model", async ({
+test("missing tokens, layer controls, and remote 3D model", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  // Missing-token behavior is deterministic; the real local model is not mocked.
+  // Missing-token behavior is deterministic; the MinIO-backed model is not mocked.
   await page.route("**/api/config", async (route) => {
     const response = await route.fetch();
     const config = await response.json();

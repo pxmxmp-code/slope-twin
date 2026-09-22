@@ -1,7 +1,5 @@
 data/
 .env
-.env.development
-.env.production
 .docker-cache/
 node_modules/
 .next/

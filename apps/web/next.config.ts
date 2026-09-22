@@ -7,10 +7,6 @@ loadEnv({ path: resolve(__dirname, "../../.env"), quiet: true });
 const config: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: resolve(__dirname, "../.."),
-  allowedDevOrigins: (process.env.DEV_ALLOWED_ORIGINS || "127.0.0.1")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean),
   async rewrites() {
     const backend = (
       process.env.BACKEND_URL || "http://127.0.0.1:8000"

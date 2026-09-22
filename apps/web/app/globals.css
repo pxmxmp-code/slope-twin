@@ -633,6 +633,32 @@ input:focus-visible {
   box-shadow: var(--shadow-xl);
 }
 
+.jmd-popup-content {
+  min-width: 210px;
+  color: #1e293b;
+  font-size: 12px;
+}
+
+.jmd-popup-content > strong {
+  display: block;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.jmd-popup-content > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0;
+}
+
+.jmd-popup-content span {
+  color: #64748b;
+}
+
 @media (max-width: 768px) {
   .header {
     height: 52px;

@@ -6,10 +6,7 @@ export type SceneConfig = {
   tilesetUrl: string;
 };
 
-export type BasemapType = "light" | "satellite" | "vector" | "dark" | "none";
-
-export type VisualMode = "natural" | "wireframe";
-
+export type ViewMode = "2d" | "3d";
 export type MeasureType = "none" | "distance" | "height" | "coordinate";
 
 export type SlopeSensor = {
@@ -31,17 +28,8 @@ export type Layers = {
   dom: boolean;
   model: boolean;
   opacity: number;
-  basemapType: BasemapType;
   sensors: boolean;
   jmd: boolean;
-  // 3D visual & environment effects
-  wireframe: boolean;
-  visualMode: VisualMode;
-  enableSun: boolean;
-  enableShadows: boolean;
-  enableAtmosphere: boolean;
-  enableBloom: boolean;
-  enableDepthTest: boolean;
 };
 
 export type Telemetry = {
@@ -51,7 +39,6 @@ export type Telemetry = {
   zoom?: number;
   pitch?: number;
   heading?: number;
-  fps?: number;
 };
 
 export type PresetPitch = {
@@ -70,14 +57,28 @@ export type ViewProps = {
   presetPitch: PresetPitch | null;
   onStatus: (message: string) => void;
   onTelemetryChange?: (telemetry: Partial<Telemetry>) => void;
-  onSensorSelect?: (sensor: SlopeSensor | null) => void;
-  selectedSensor?: SlopeSensor | null;
 };
 
-export function tiandituUrl(
-  layer: "vec" | "cva" | "img" | "cia",
-  token: string,
-) {
+export const DEFAULT_LAYERS: Layers = {
+  basemap: true,
+  labels: true,
+  dom: true,
+  model: true,
+  opacity: 1,
+  sensors: true,
+  jmd: true,
+};
+
+export const DEFAULT_TELEMETRY: Telemetry = {
+  lon: 98.88215,
+  lat: 27.05023,
+  alt: 1850,
+  zoom: 16.5,
+  pitch: 0,
+  heading: 0,
+};
+
+export function tiandituUrl(layer: "vec" | "cva", token: string) {
   return `https://t0.tianditu.gov.cn/${layer}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layer}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${encodeURIComponent(token)}`;
 }
 
@@ -85,10 +86,6 @@ export const CARTO_LIGHT_TILES =
   "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
 export const CARTO_LIGHT_LABELS =
   "https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png";
-export const CARTO_DARK_TILES =
-  "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png";
-export const CARTO_DARK_LABELS =
-  "https://a.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png";
 
 export const DEFAULT_SENSORS: SlopeSensor[] = [
   {

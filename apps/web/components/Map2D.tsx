@@ -3,14 +3,52 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import {
-  CARTO_DARK_LABELS,
-  CARTO_DARK_TILES,
   CARTO_LIGHT_LABELS,
   CARTO_LIGHT_TILES,
   DEFAULT_SENSORS,
   tiandituUrl,
   type ViewProps,
 } from "./types";
+
+type JmdProperties = {
+  id?: number;
+  xm?: string;
+  rs?: number;
+  shape_length?: number;
+  shape_area?: number;
+};
+
+function jmdPopupContent(properties: JmdProperties) {
+  const content = document.createElement("div");
+  content.className = "jmd-popup-content";
+
+  const title = document.createElement("strong");
+  title.textContent = `🏠 居民地要素 #${properties.id ?? ""}`;
+  content.appendChild(title);
+
+  const rows: [string, string][] = [
+    ["项目标识", properties.xm ?? "--"],
+    ["常住人口", `${properties.rs ?? 0} 人`],
+    [
+      "占地面积",
+      `${properties.shape_area === undefined ? "--" : Number(properties.shape_area).toFixed(2)} ㎡`,
+    ],
+    [
+      "轮廓周长",
+      `${properties.shape_length === undefined ? "--" : Number(properties.shape_length).toFixed(2)} m`,
+    ],
+  ];
+  for (const [label, value] of rows) {
+    const row = document.createElement("div");
+    const name = document.createElement("span");
+    const result = document.createElement("b");
+    name.textContent = label;
+    result.textContent = value;
+    row.append(name, result);
+    content.appendChild(row);
+  }
+  return content;
+}
 
 function calculateDistance(coords: [number, number][]): {
   totalMeters: number;
@@ -47,7 +85,6 @@ export default function Map2D({
   presetPitch,
   onStatus,
   onTelemetryChange,
-  onSensorSelect,
 }: ViewProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -57,8 +94,6 @@ export default function Map2D({
   onTelemetryChangeRef.current = onTelemetryChange;
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
-  const onSensorSelectRef = useRef(onSensorSelect);
-  onSensorSelectRef.current = onSensorSelect;
   const measureModeRef = useRef(measureMode);
   measureModeRef.current = measureMode;
   const layersRef = useRef(layers);
@@ -165,102 +200,36 @@ export default function Map2D({
     });
 
     map.on("load", () => {
-      // 1. Light Basemap
-      map.addSource("carto-light-src", {
+      const useTianditu = Boolean(tiandituToken);
+      map.addSource("basemap-src", {
         type: "raster",
-        tiles: [CARTO_LIGHT_TILES],
+        tiles: [
+          useTianditu ? tiandituUrl("vec", tiandituToken) : CARTO_LIGHT_TILES,
+        ],
         tileSize: 256,
-        maxzoom: 19,
+        maxzoom: useTianditu ? 18 : 19,
       });
       map.addLayer({
-        id: "basemap-light",
+        id: "basemap",
         type: "raster",
-        source: "carto-light-src",
+        source: "basemap-src",
         layout: { visibility: "visible" },
       });
 
-      // Light Labels
-      map.addSource("carto-light-labels-src", {
+      map.addSource("labels-src", {
         type: "raster",
-        tiles: [CARTO_LIGHT_LABELS],
+        tiles: [
+          useTianditu ? tiandituUrl("cva", tiandituToken) : CARTO_LIGHT_LABELS,
+        ],
         tileSize: 256,
-        maxzoom: 19,
+        maxzoom: useTianditu ? 18 : 19,
       });
       map.addLayer({
-        id: "labels-light",
+        id: "labels",
         type: "raster",
-        source: "carto-light-labels-src",
+        source: "labels-src",
         layout: { visibility: "visible" },
       });
-
-      // Dark Basemap
-      map.addSource("carto-dark-src", {
-        type: "raster",
-        tiles: [CARTO_DARK_TILES],
-        tileSize: 256,
-        maxzoom: 19,
-      });
-      map.addLayer({
-        id: "basemap-dark",
-        type: "raster",
-        source: "carto-dark-src",
-        layout: { visibility: "none" },
-      });
-
-      map.addSource("carto-dark-labels-src", {
-        type: "raster",
-        tiles: [CARTO_DARK_LABELS],
-        tileSize: 256,
-        maxzoom: 19,
-      });
-      map.addLayer({
-        id: "labels-dark",
-        type: "raster",
-        source: "carto-dark-labels-src",
-        layout: { visibility: "none" },
-      });
-
-      // 2. Tianditu Vector & Satellite
-      if (tiandituToken) {
-        map.addSource("tdt-vec-src", {
-          type: "raster",
-          tiles: [tiandituUrl("vec", tiandituToken)],
-          tileSize: 256,
-          maxzoom: 18,
-        });
-        map.addLayer({
-          id: "basemap-vec",
-          type: "raster",
-          source: "tdt-vec-src",
-          layout: { visibility: "none" },
-        });
-
-        map.addSource("tdt-sat-src", {
-          type: "raster",
-          tiles: [tiandituUrl("img", tiandituToken)],
-          tileSize: 256,
-          maxzoom: 18,
-        });
-        map.addLayer({
-          id: "basemap-sat",
-          type: "raster",
-          source: "tdt-sat-src",
-          layout: { visibility: "none" },
-        });
-
-        map.addSource("tdt-cva-src", {
-          type: "raster",
-          tiles: [tiandituUrl("cva", tiandituToken)],
-          tileSize: 256,
-          maxzoom: 18,
-        });
-        map.addLayer({
-          id: "labels-cva",
-          type: "raster",
-          source: "tdt-cva-src",
-          layout: { visibility: "none" },
-        });
-      }
 
       // 3. DOM Layer
       map.addSource("dom", {
@@ -392,21 +361,7 @@ export default function Map2D({
         const feat = e.features[0] as unknown as {
           properties?: Record<string, unknown>;
         };
-        const props = (feat.properties || {}) as {
-          id?: number;
-          xm?: string;
-          rs?: number;
-          shape_length?: number;
-          shape_area?: number;
-        };
-        const area =
-          props.shape_area !== undefined
-            ? Number(props.shape_area).toFixed(2)
-            : "--";
-        const len =
-          props.shape_length !== undefined
-            ? Number(props.shape_length).toFixed(2)
-            : "--";
+        const props = (feat.properties || {}) as JmdProperties;
 
         new mapboxgl.Popup({
           closeButton: true,
@@ -415,24 +370,7 @@ export default function Map2D({
           maxWidth: "280px",
         })
           .setLngLat(e.lngLat)
-          .setHTML(
-            `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #1e293b; padding: 4px;">
-              <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
-                <span>🏠 居民地要素</span>
-                <span style="font-size: 11px; color: #2563eb; background: #eff6ff; padding: 1px 6px; border-radius: 4px;">ID #${props.id ?? ""}</span>
-              </div>
-              <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; line-height: 1.5;">
-                <span style="color: #64748b;">项目标识:</span>
-                <span style="font-weight: 600; color: #0f172a;">${props.xm ?? "--"}</span>
-                <span style="color: #64748b;">常住人口:</span>
-                <span style="font-weight: 600; color: #2563eb;">${props.rs ?? 0} 人</span>
-                <span style="color: #64748b;">占地面积:</span>
-                <span style="font-weight: 600; color: #0f172a;">${area} ㎡</span>
-                <span style="color: #64748b;">轮廓周长:</span>
-                <span style="font-weight: 600; color: #0f172a;">${len} m</span>
-              </div>
-            </div>`,
-          )
+          .setDOMContent(jmdPopupContent(props))
           .addTo(map);
       });
 
@@ -480,48 +418,18 @@ export default function Map2D({
     const m = mapRef.current;
     if (!m || !m.isStyleLoaded()) return;
 
-    const basemapLayers = [
-      "basemap-light",
-      "basemap-dark",
-      "basemap-vec",
-      "basemap-sat",
-    ];
-    for (const id of basemapLayers) {
-      if (mLayerExists(m, id)) {
-        let visible = false;
-        if (layers.basemap) {
-          if (layers.basemapType === "light" && id === "basemap-light")
-            visible = true;
-          if (layers.basemapType === "dark" && id === "basemap-dark")
-            visible = true;
-          if (layers.basemapType === "vector" && id === "basemap-vec")
-            visible = true;
-          if (layers.basemapType === "satellite" && id === "basemap-sat")
-            visible = true;
-        }
-        m.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
-      }
-    }
-
-    const labelLayers = ["labels-light", "labels-cva", "labels-dark"];
-    for (const id of labelLayers) {
-      if (mLayerExists(m, id)) {
-        let visible = false;
-        if (layers.labels) {
-          if (layers.basemapType === "light" && id === "labels-light")
-            visible = true;
-          if (layers.basemapType === "dark" && id === "labels-dark")
-            visible = true;
-          if (
-            (layers.basemapType === "vector" ||
-              layers.basemapType === "satellite") &&
-            id === "labels-cva"
-          )
-            visible = true;
-        }
-        m.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
-      }
-    }
+    if (mLayerExists(m, "basemap"))
+      m.setLayoutProperty(
+        "basemap",
+        "visibility",
+        layers.basemap ? "visible" : "none",
+      );
+    if (mLayerExists(m, "labels"))
+      m.setLayoutProperty(
+        "labels",
+        "visibility",
+        layers.labels ? "visible" : "none",
+      );
 
     if (mLayerExists(m, "dom")) {
       m.setLayoutProperty("dom", "visibility", layers.dom ? "visible" : "none");
@@ -542,14 +450,7 @@ export default function Map2D({
         layers.jmd ? "visible" : "none",
       );
     }
-  }, [
-    layers.basemap,
-    layers.basemapType,
-    layers.labels,
-    layers.dom,
-    layers.opacity,
-    layers.jmd,
-  ]);
+  }, [layers.basemap, layers.labels, layers.dom, layers.opacity, layers.jmd]);
 
   // 3. Sensor markers
   useEffect(() => {
@@ -574,9 +475,6 @@ export default function Map2D({
             <div style="width: 8px; height: 8px; border-radius: 50%; background: ${isWarn ? "#f59e0b" : "#2563eb"}; border: 2px solid #ffffff; margin-top: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
           </div>
         `;
-        el.onclick = () => {
-          onSensorSelectRef.current?.(sensor);
-        };
         const marker = new mapboxgl.Marker({ element: el })
           .setLngLat([sensor.lon, sensor.lat])
           .addTo(map);
