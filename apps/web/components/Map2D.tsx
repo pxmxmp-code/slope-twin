@@ -793,21 +793,23 @@ export default function Map2D({
       {/* Floating Measurement HUD */}
       {measureMode === "distance" && (
         <div className="measure-hud" role="region" aria-label="测距信息">
-          <span>
-            📐 测距模式：已选 <b>{measurePoints.length}</b> 点
+          <span className="flex items-center gap-1.5 text-sky-300 font-medium">
+            <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+            空间测距：已选{" "}
+            <b className="text-white font-mono">{measurePoints.length}</b> 点
           </span>
           {measurePoints.length >= 2 && (
-            <span>
-              总距离：
-              <b style={{ color: "#2563eb", fontSize: "14px" }}>
+            <span className="flex items-center gap-2 pl-2 border-l border-white/10">
+              <span className="text-slate-400">总距离:</span>
+              <b className="text-sky-400 font-mono text-sm font-bold">
                 {measureDist >= 1000
                   ? `${(measureDist / 1000).toFixed(2)} km`
                   : `${measureDist.toFixed(1)} m`}
               </b>
             </span>
           )}
-          <span style={{ color: "#64748b", fontSize: "11px" }}>
-            在地图上点击添加测量点
+          <span className="text-slate-400 text-xs pl-2 border-l border-white/10">
+            在地图上点击添加折线测距点
           </span>
         </div>
       )}
@@ -815,13 +817,13 @@ export default function Map2D({
       {!config.mapboxToken && (
         <div className="empty-state">
           <div className="empty-icon">🗺️</div>
-          <h2>连接二维地图</h2>
+          <h2>待连接二维正射地图</h2>
           <p>
-            填写根目录 .env 中的 MAPBOX_TOKEN 并重启后端，即可浏览正射影像。
+            检测到当前未配置 MAPBOX_TOKEN。请在环境变量中设置 Mapbox
+            公共令牌，即可载入超高分辨率 DOM 正射航摄影像与矢量图层。
           </p>
-          <p>
-            天地图电子地图和中文注记另需
-            TIANDITU_TOKEN。三维实景可直接在上方切换浏览。
+          <p className="text-sky-400 text-xs font-medium">
+            三维实景模型无需 Mapbox 令牌，可直接在上方切换为“三维实景”即刻浏览。
           </p>
         </div>
       )}

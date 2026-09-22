@@ -11,11 +11,11 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 if (-not (Test-Path .env)) {
     Copy-Item .env.example .env
 }
-if (-not (Test-Path node_modules)) {
+if (-not (Test-Path node_modules/.bin/concurrently.cmd)) {
     & npm install
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
-if (-not (Test-Path apps/api/.venv)) {
+if (-not (Test-Path apps/api/.venv/Scripts/python.exe)) {
     & uv sync --project apps/api
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }

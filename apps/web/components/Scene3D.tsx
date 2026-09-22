@@ -692,38 +692,44 @@ export default function Scene3D({
 
       {selectedContour && layers.contours && (
         <div
-          className="absolute bottom-4 left-4 z-20 w-52 rounded-xl border border-slate-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md"
+          className="absolute bottom-4 left-4 z-20 w-56 rounded-xl border border-white/10 bg-slate-900/90 p-3.5 text-xs shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
           role="region"
           aria-label="等高线属性"
         >
-          <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
-            <strong className="text-sm text-slate-800">〰 等高线属性</strong>
+          <div className="mb-2.5 flex items-center justify-between border-b border-white/10 pb-2">
+            <strong className="text-[13px] font-semibold text-sky-400 flex items-center gap-1.5">
+              <span>〰</span> 等高线属性
+            </strong>
             <button
               type="button"
-              className="text-slate-400 hover:text-slate-700"
+              className="w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
               onClick={() => setSelectedContour(null)}
               title="关闭"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">高程</span>
-            <strong className="text-amber-700">
-              {selectedContour.elevation} m
-            </strong>
-          </div>
-          <div className="mt-1 flex justify-between">
-            <span className="text-slate-500">级别</span>
-            <strong className="text-slate-700">
-              {selectedContour.elevation % 20 === 0 ? "20m 主曲线" : "2m 曲线"}
-            </strong>
-          </div>
-          <div className="mt-1 flex justify-between">
-            <span className="text-slate-500">要素 ID</span>
-            <strong className="text-slate-700">
-              {selectedContour.sourceId ?? selectedContour.fid ?? "--"}
-            </strong>
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center py-0.5">
+              <span className="text-slate-400">高程</span>
+              <strong className="text-amber-400 font-mono text-[13px]">
+                {selectedContour.elevation} m
+              </strong>
+            </div>
+            <div className="flex justify-between items-center py-0.5 border-t border-white/5">
+              <span className="text-slate-400">级别</span>
+              <span className="px-1.5 py-0.5 rounded bg-white/5 text-[11px] text-slate-200 font-medium">
+                {selectedContour.elevation % 20 === 0
+                  ? "20m 主曲线"
+                  : "2m 曲线"}
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-0.5 border-t border-white/5">
+              <span className="text-slate-400">要素 ID</span>
+              <span className="text-slate-300 font-mono text-[11px]">
+                {selectedContour.sourceId ?? selectedContour.fid ?? "--"}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -733,19 +739,24 @@ export default function Scene3D({
         <div className="measure-hud" role="region" aria-label="三维量测信息">
           {measureMode === "distance" && (
             <>
-              <span>
-                📐 空间测距：已选 <b>{measureInfo.pointsCount}</b> 点
+              <span className="flex items-center gap-1.5 text-sky-300 font-medium">
+                <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                空间测距：已选{" "}
+                <b className="text-white font-mono">
+                  {measureInfo.pointsCount}
+                </b>{" "}
+                点
               </span>
               {measureInfo.distance !== undefined && (
-                <span>
-                  直线距：
-                  <b style={{ color: "#2563eb" }}>
+                <span className="flex items-center gap-2 pl-2 border-l border-white/10">
+                  <span className="text-slate-400">直线距:</span>
+                  <b className="text-sky-400 font-mono text-sm">
                     {measureInfo.distance >= 1000
                       ? `${(measureInfo.distance / 1000).toFixed(2)} km`
                       : `${measureInfo.distance.toFixed(1)} m`}
                   </b>
                   {measureInfo.heightDiff !== undefined && (
-                    <span style={{ marginLeft: "8px", color: "#64748b" }}>
+                    <span className="text-slate-400 text-xs font-mono">
                       (高差: {measureInfo.heightDiff.toFixed(1)}m)
                     </span>
                   )}
@@ -756,13 +767,18 @@ export default function Scene3D({
 
           {measureMode === "height" && (
             <>
-              <span>
-                ⛰️ 高差测量：已选 <b>{measureInfo.pointsCount}</b> / 2 点
+              <span className="flex items-center gap-1.5 text-amber-300 font-medium">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                高差测量：已选{" "}
+                <b className="text-white font-mono">
+                  {measureInfo.pointsCount}
+                </b>{" "}
+                / 2 点
               </span>
               {measureInfo.heightDiff !== undefined && (
-                <span>
-                  垂直落差：
-                  <b style={{ color: "#f59e0b", fontSize: "14px" }}>
+                <span className="flex items-center gap-2 pl-2 border-l border-white/10">
+                  <span className="text-slate-400">垂直落差:</span>
+                  <b className="text-amber-400 font-mono text-sm font-bold">
                     {measureInfo.heightDiff.toFixed(2)} m
                   </b>
                 </span>
@@ -772,18 +788,29 @@ export default function Scene3D({
 
           {measureMode === "coordinate" && (
             <>
-              <span>📍 空间坐标探测</span>
+              <span className="flex items-center gap-1.5 text-sky-300 font-medium">
+                <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                空间坐标探测
+              </span>
               {measureInfo.coord ? (
-                <span>
-                  经度:{" "}
-                  <b style={{ color: "#2563eb" }}>{measureInfo.coord.lon}°</b>{" "}
-                  纬度:{" "}
-                  <b style={{ color: "#2563eb" }}>{measureInfo.coord.lat}°</b>{" "}
-                  海拔:{" "}
-                  <b style={{ color: "#2563eb" }}>{measureInfo.coord.alt} m</b>
-                </span>
+                <div className="flex items-center gap-3 pl-2 border-l border-white/10 font-mono text-xs">
+                  <span>
+                    经度:{" "}
+                    <b className="text-sky-300">{measureInfo.coord.lon}°</b>
+                  </span>
+                  <span>
+                    纬度:{" "}
+                    <b className="text-sky-300">{measureInfo.coord.lat}°</b>
+                  </span>
+                  <span>
+                    海拔:{" "}
+                    <b className="text-amber-300">{measureInfo.coord.alt} m</b>
+                  </span>
+                </div>
               ) : (
-                <span style={{ color: "#64748b" }}>在模型表面点击拾取点</span>
+                <span className="text-slate-400 text-xs pl-2 border-l border-white/10">
+                  在三维模型表面点击拾取点位
+                </span>
               )}
             </>
           )}

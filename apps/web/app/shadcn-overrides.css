@@ -1,42 +1,41 @@
+/* Mode Switch: 2D Map / 3D Scene Viewport Switcher */
 .mode-switch {
-  height: auto;
+  height: 36px;
   display: flex;
   align-items: center;
-  background: #f1f5f9;
+  background: rgba(15, 23, 42, 0.7);
   padding: 3px;
   border-radius: 9999px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .mode-switch button {
   border-radius: 9999px;
-  padding: 6px 16px;
-  font-size: 13px;
+  padding: 4px 14px;
+  font-size: 12px;
   font-weight: 500;
-  color: #64748b;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: #94a3b8;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   border: none;
   background: transparent;
   display: flex;
   align-items: center;
   gap: 6px;
+  letter-spacing: 0.2px;
 }
 
 .mode-switch button:hover {
-  color: #1e293b;
+  color: #f1f5f9;
 }
 
 .mode-switch button[data-state="active"] {
-  background: #ffffff;
-  color: #0f172a;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
   font-weight: 600;
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-.opacity [data-orientation="horizontal"] span {
-  display: block;
+    0 0 12px rgba(2, 132, 199, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .layer-row button {
@@ -44,51 +43,62 @@
 }
 
 .layer-switch {
-  width: 28px !important;
-  height: 16px !important;
-  border-width: 1px !important;
+  width: 32px !important;
+  height: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .layer-switch span {
-  width: 12px !important;
-  height: 12px !important;
+  width: 14px !important;
+  height: 14px !important;
+  background-color: #f8fafc !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.layer-switch[data-state="checked"] {
+  background-color: #0284c7 !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4) !important;
 }
 
 .layer-switch[data-state="checked"] span {
-  transform: translateX(12px) !important;
+  transform: translateX(14px) !important;
+  background-color: #ffffff !important;
 }
 
-/* Switch modern clean styling */
-button[data-state="checked"] {
-  background-color: #2563eb !important;
-  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.3) !important;
-}
-
-button[data-state="unchecked"] {
-  background-color: #cbd5e1 !important;
-}
-
-/* Slider modern clean styling */
+/* Slider modern dark high-tech styling */
 [data-slot="slider-track"] {
-  background-color: #e2e8f0 !important;
-  height: 6px !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  height: 4px !important;
   border-radius: 9999px !important;
 }
 
 [data-slot="slider-range"] {
-  background-color: #2563eb !important;
+  background: linear-gradient(90deg, #0284c7, #38bdf8) !important;
   border-radius: 9999px !important;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.4) !important;
 }
 
 [data-slot="slider-thumb"] {
-  border: 2px solid #2563eb !important;
-  background-color: #ffffff !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
-  width: 16px !important;
-  height: 16px !important;
+  border: 2px solid #38bdf8 !important;
+  background-color: #0b0f19 !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5) !important;
+  width: 14px !important;
+  height: 14px !important;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease !important;
+}
+
+[data-slot="slider-thumb"]:hover {
+  transform: scale(1.15) !important;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.8) !important;
 }
 
 [data-slot="slider-thumb"]:focus-visible {
-  outline: 2px solid #93c5fd !important;
+  outline: 2px solid #38bdf8 !important;
   outline-offset: 2px !important;
 }

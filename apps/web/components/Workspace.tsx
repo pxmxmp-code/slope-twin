@@ -2,6 +2,16 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  Compass,
+  Gauge,
+  Loader2,
+  MapPin,
+  RefreshCw,
+  Satellite,
+} from "lucide-react";
 
 import { LayerPanel } from "./LayerPanel";
 import { MapToolbar } from "./MapToolbar";
@@ -27,7 +37,7 @@ export default function Workspace() {
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
   const [layerPanelOpen, setLayerPanelOpen] = useState(true);
   const [locate, setLocate] = useState(0);
-  const [status, setStatus] = useState("正在连接服务…");
+  const [status, setStatus] = useState("正在连接数字孪生底座…");
   const [measureMode, setMeasureMode] = useState<MeasureType>("none");
   const [clearMeasure, setClearMeasure] = useState(0);
   const [autoOrbit, setAutoOrbit] = useState(false);
@@ -57,7 +67,7 @@ export default function Workspace() {
 
   function changeMode(next: string) {
     setMode(next as ViewMode);
-    setStatus("正在切换视图…");
+    setStatus("正在切换孪生视窗…");
     setAutoOrbit(false);
     setMeasureMode("none");
   }
@@ -102,11 +112,18 @@ export default function Workspace() {
           >
             {error ? (
               <div className="empty-state" role="alert">
-                <div className="empty-icon text-red-500 bg-red-50">⚠️</div>
+                <div className="empty-icon text-rose-400 bg-rose-500/10 border-rose-500/30">
+                  <AlertCircle className="w-8 h-8" />
+                </div>
                 <h2>无法连接地图服务</h2>
                 <p>{error}</p>
-                <Button variant="outline" onClick={retry}>
-                  重新连接
+                <Button
+                  variant="outline"
+                  className="border-sky-500/30 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25 hover:text-white"
+                  onClick={retry}
+                >
+                  <RefreshCw className="w-3.5 h-3.5 mr-2" />
+                  重新连接服务
                 </Button>
               </div>
             ) : viewProps ? (
@@ -117,8 +134,11 @@ export default function Workspace() {
               )
             ) : (
               <div className="empty-state">
-                <div className="empty-icon">⏳</div>
-                <h2>正在连接地图服务…</h2>
+                <div className="empty-icon">
+                  <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+                </div>
+                <h2>正在初始化数字孪生底座…</h2>
+                <p>正在装配空间拓扑、遥感图层与实景流式资源</p>
               </div>
             )}
 
@@ -132,6 +152,7 @@ export default function Workspace() {
               onClose={() => setLayerPanelOpen(false)}
               onOpen={() => setLayerPanelOpen(true)}
             />
+
             <MapToolbar
               mode={mode}
               telemetry={telemetry}
@@ -145,40 +166,76 @@ export default function Workspace() {
 
             <div className="help">
               {mode === "2d"
-                ? "拖动平移 · 滚轮缩放 · 右键旋转俯仰"
-                : "左键旋转 · 滚轮缩放 · 中键平移 · 双击对焦"}
+                ? "🖱️ 左键拖动平移 · 滚轮缩放 · 右键旋转俯仰"
+                : "🖱️ 左键旋转视角 · 滚轮缩放 · 中键平移 · 双击聚焦点"}
             </div>
           </TabsContent>
         </section>
 
+        {/* Spatial Telemetry Statusbar */}
         <footer className="footer">
-          <span role="status">
-            {error ||
-              (mode === "2d" && config && !config.mapboxToken
-                ? "待填写 Mapbox token · 可切换三维查看模型"
-                : status)}
-          </span>
-          <div className="hidden md:flex items-center gap-4 text-[11px] text-slate-500">
-            <span>经度: {telemetry.lon.toFixed(5)}° E</span>
-            <span>纬度: {telemetry.lat.toFixed(5)}° N</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+            <span role="status" className="truncate text-[11.5px] font-medium">
+              {error ||
+                (mode === "2d" && config && !config.mapboxToken
+                  ? "待填写 Mapbox token · 可切换三维查看模型"
+                  : status)}
+            </span>
+          </div>
+
+          {/* Precision Telemetry Indicators */}
+          <div className="hidden lg:flex items-center gap-2">
+            <div className="telemetry-badge">
+              <span className="telemetry-label">LON</span>
+              <span className="telemetry-val">
+                {telemetry.lon.toFixed(5)}° E
+              </span>
+            </div>
+            <div className="telemetry-badge">
+              <span className="telemetry-label">LAT</span>
+              <span className="telemetry-val">
+                {telemetry.lat.toFixed(5)}° N
+              </span>
+            </div>
             {telemetry.alt !== undefined && (
-              <span>海拔: {telemetry.alt} m</span>
+              <div className="telemetry-badge">
+                <span className="telemetry-label">ALT</span>
+                <span className="telemetry-val">{telemetry.alt} m</span>
+              </div>
             )}
             {telemetry.pitch !== undefined && (
-              <span>俯仰: {telemetry.pitch}°</span>
+              <div className="telemetry-badge">
+                <span className="telemetry-label">PITCH</span>
+                <span className="telemetry-val">{telemetry.pitch}°</span>
+              </div>
             )}
             {telemetry.heading !== undefined && (
-              <span>方位: {telemetry.heading}°</span>
+              <div className="telemetry-badge">
+                <span className="telemetry-label">HEAD</span>
+                <span className="telemetry-val">{telemetry.heading}°</span>
+              </div>
             )}
             {telemetry.zoom !== undefined && (
-              <span>层级: {telemetry.zoom}</span>
+              <div className="telemetry-badge">
+                <span className="telemetry-label">ZOOM</span>
+                <span className="telemetry-val">{telemetry.zoom}</span>
+              </div>
             )}
           </div>
-          <span className="text-slate-400 text-[11px]">
-            {config
-              ? `${((config.bounds[0] + config.bounds[2]) / 2).toFixed(5)}° E / ${((config.bounds[1] + config.bounds[3]) / 2).toFixed(5)}° N`
-              : "—"}
-          </span>
+
+          {/* Project Center & Spatial Ref */}
+          <div className="flex items-center gap-3 text-slate-400 text-[10.5px] font-mono">
+            <span className="hidden sm:inline">
+              中心:{" "}
+              {config
+                ? `${((config.bounds[0] + config.bounds[2]) / 2).toFixed(4)}°E / ${((config.bounds[1] + config.bounds[3]) / 2).toFixed(4)}°N`
+                : "—"}
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-sky-400 text-[10px]">
+              WGS-84 / 3D
+            </span>
+          </div>
         </footer>
       </main>
     </Tabs>
