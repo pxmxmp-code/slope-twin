@@ -37,7 +37,7 @@ docker-compose.yml             # 仅 web + api
 rtk cp .env.example .env
 rtk npm install
 rtk proxy uv sync --project apps/api
-rtk npm run dev
+./dev.sh
 ```
 
 打开 <http://127.0.0.1:3000>。Web 在 `127.0.0.1:3000`，API 在 `127.0.0.1:8000`，两者都有热更新。

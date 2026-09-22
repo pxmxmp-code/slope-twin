@@ -85,7 +85,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/geology/{z}/{x}/{y}.png")
     async def geology_tile(z: int, x: int, y: int, request: Request):
-        content = await infrastructure(request).geology_png(z, x, y)
+        content = await infrastructure(request).geology_png(
+            z, x, y, request.headers.get("x-geocloud-token")
+        )
         return Response(
             content,
             media_type="image/png",
@@ -104,16 +106,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         x: int = Query(ge=0),
         y: int = Query(ge=0),
     ):
-        half = 20037508.342789244
         if not (
-            -half <= west < east <= half
-            and -half <= south < north <= half
+            -180 <= west < east <= 180
+            and -85.051129 <= south < north <= 85.051129
             and x < width
             and y < height
         ):
             raise HTTPException(422, "无效的地图查询范围或像素坐标")
         return await infrastructure(request).geology_info(
-            (west, south, east, north), width, height, x, y
+            (west, south, east, north),
+            width,
+            height,
+            x,
+            y,
+            request.headers.get("x-geocloud-token"),
         )
 
     @app.api_route("/tiles/{file_path:path}", methods=["GET", "HEAD"])

@@ -50,6 +50,7 @@ function addContours(
   source: Cesium.CustomDataSource,
   data: ContourCollection,
   groundElevation: number,
+  opacity: number,
 ) {
   const labeled = new Set<number>();
   for (const feature of data.features ?? []) {
@@ -92,7 +93,7 @@ function addContours(
           width: major ? 2 : 1,
           material: C.Color.fromCssColorString(
             major ? "#f59e0b" : "#2563eb",
-          ).withAlpha(major ? 0.9 : 0.45),
+          ).withAlpha(opacity),
         },
       });
       if (major && !labeled.has(elevation)) {
@@ -103,7 +104,7 @@ function addContours(
           label: {
             text: `${elevation} m`,
             font: "10px -apple-system, BlinkMacSystemFont, sans-serif",
-            fillColor: C.Color.fromCssColorString("#92400e"),
+            fillColor: C.Color.fromCssColorString("#92400e").withAlpha(opacity),
             outlineColor: C.Color.WHITE,
             outlineWidth: 3,
             style: C.LabelStyle.FILL_AND_OUTLINE,
@@ -227,6 +228,7 @@ export default function Scene3D({
         const basemap =
           viewer.imageryLayers.addImageryProvider(basemapProvider);
         basemap.show = layers.basemap;
+        basemap.alpha = layers.opacity.basemap;
         imageryRef.current.basemap = basemap;
 
         const labelsProvider = new C.UrlTemplateImageryProvider({
@@ -238,6 +240,7 @@ export default function Scene3D({
         });
         const labels = viewer.imageryLayers.addImageryProvider(labelsProvider);
         labels.show = layers.labels;
+        labels.alpha = layers.opacity.labels;
         imageryRef.current.labels = labels;
 
         // 3. Load 3D Tileset
@@ -265,6 +268,9 @@ export default function Scene3D({
         viewer.scene.primitives.add(model);
         modelRef.current = model;
         model.show = latestLayers.current.model;
+        model.style = new C.Cesium3DTileStyle({
+          color: `color('white', ${latestLayers.current.opacity.model})`,
+        });
 
         let contourInterval = 0;
         let contourRequest = 0;
@@ -286,7 +292,13 @@ export default function Scene3D({
             )
               return;
             const source = new C.CustomDataSource(`contours-${interval}m`);
-            addContours(C, source, data, config.groundElevation);
+            addContours(
+              C,
+              source,
+              data,
+              config.groundElevation,
+              latestLayers.current.opacity.contours,
+            );
             source.show = latestLayers.current.contours;
             await viewer.dataSources.add(source);
             if (contourDataSourceRef.current)
@@ -312,7 +324,9 @@ export default function Scene3D({
                     C.ClassificationType.BOTH,
                   );
                   entity.polygon.material = new C.ColorMaterialProperty(
-                    C.Color.fromCssColorString("#3b82f6").withAlpha(0.55),
+                    C.Color.fromCssColorString("#3b82f6").withAlpha(
+                      latestLayers.current.opacity.jmd,
+                    ),
                   );
                 }
               }
@@ -433,13 +447,38 @@ export default function Scene3D({
 
     if (model) {
       model.show = layers.model;
+      model.style = new C.Cesium3DTileStyle({
+        color: `color('white', ${layers.opacity.model})`,
+      });
     }
 
     if (jmdDataSourceRef.current) {
       jmdDataSourceRef.current.show = layers.jmd;
+      for (const entity of jmdDataSourceRef.current.entities.values)
+        if (entity.polygon)
+          entity.polygon.material = new C.ColorMaterialProperty(
+            C.Color.fromCssColorString("#3b82f6").withAlpha(layers.opacity.jmd),
+          );
     }
     if (contourDataSourceRef.current) {
       contourDataSourceRef.current.show = layers.contours;
+      for (const entity of contourDataSourceRef.current.entities.values) {
+        const elevation = entity.properties?.elevation?.getValue();
+        if (entity.polyline)
+          entity.polyline.material = new C.ColorMaterialProperty(
+            C.Color.fromCssColorString(
+              typeof elevation === "number" && elevation % 20 === 0
+                ? "#f59e0b"
+                : "#2563eb",
+            ).withAlpha(layers.opacity.contours),
+          );
+        if (entity.label)
+          entity.label.fillColor = new C.ConstantProperty(
+            C.Color.fromCssColorString("#92400e").withAlpha(
+              layers.opacity.contours,
+            ),
+          );
+      }
     }
     if (!layers.contours) setSelectedContour(null);
     if (!layers.jmd) {
@@ -447,8 +486,14 @@ export default function Scene3D({
     }
 
     const img = imageryRef.current;
-    if (img.basemap) img.basemap.show = layers.basemap;
-    if (img.labels) img.labels.show = layers.labels;
+    if (img.basemap) {
+      img.basemap.show = layers.basemap;
+      img.basemap.alpha = layers.opacity.basemap;
+    }
+    if (img.labels) {
+      img.labels.show = layers.labels;
+      img.labels.alpha = layers.opacity.labels;
+    }
     viewer.scene.requestRender();
   }, [layers, viewerReady]);
 
@@ -467,6 +512,7 @@ export default function Scene3D({
         const pinColor = isWarning
           ? C.Color.fromCssColorString("#f59e0b")
           : C.Color.fromCssColorString("#2563eb");
+        const opacity = layers.opacity.sensors;
 
         const ent = viewer.entities.add({
           position: C.Cartesian3.fromDegrees(
@@ -476,16 +522,16 @@ export default function Scene3D({
           ),
           point: {
             pixelSize: 10,
-            color: pinColor,
-            outlineColor: C.Color.WHITE,
+            color: pinColor.withAlpha(opacity),
+            outlineColor: C.Color.WHITE.withAlpha(opacity),
             outlineWidth: 2,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
             text: `${sensor.id}\n${sensor.value}`,
             font: "11px -apple-system, BlinkMacSystemFont, sans-serif",
-            fillColor: C.Color.fromCssColorString("#0f172a"),
-            outlineColor: C.Color.WHITE,
+            fillColor: C.Color.fromCssColorString("#0f172a").withAlpha(opacity),
+            outlineColor: C.Color.WHITE.withAlpha(opacity),
             outlineWidth: 3,
             style: C.LabelStyle.FILL_AND_OUTLINE,
             verticalOrigin: C.VerticalOrigin.BOTTOM,
@@ -493,7 +539,7 @@ export default function Scene3D({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             backgroundColor: C.Color.fromCssColorString(
               "rgba(255, 255, 255, 0.92)",
-            ),
+            ).withAlpha(0.92 * opacity),
             showBackground: true,
             backgroundPadding: new C.Cartesian2(6, 4),
           },
@@ -501,7 +547,12 @@ export default function Scene3D({
         sensorEntitiesRef.current.push(ent);
       });
     }
-  }, [layers.sensors, config.groundElevation, viewerReady]);
+  }, [
+    layers.sensors,
+    layers.opacity.sensors,
+    config.groundElevation,
+    viewerReady,
+  ]);
 
   // Orbit / Auto Cruise
   useEffect(() => {

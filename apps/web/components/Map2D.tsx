@@ -117,15 +117,6 @@ function geologyPopupContent(value: unknown) {
   return content;
 }
 
-function mercatorMeters(lon: number, lat: number): [number, number] {
-  const radius = 6378137;
-  const safeLat = Math.max(-85.051129, Math.min(85.051129, lat));
-  return [
-    radius * ((lon * Math.PI) / 180),
-    radius * Math.asinh(Math.tan((safeLat * Math.PI) / 180)),
-  ];
-}
-
 function contourIntervalForZoom(zoom: number) {
   if (zoom >= 18) return 2;
   if (zoom >= 16) return 10;
@@ -161,6 +152,7 @@ function calculateDistance(coords: [number, number][]): {
 export default function Map2D({
   config,
   layers,
+  geologyToken,
   locate,
   measureMode,
   clearMeasureTrigger,
@@ -216,6 +208,10 @@ export default function Map2D({
       fitBoundsOptions: { padding: 80 },
       maxZoom: 22,
       attributionControl: false,
+      transformRequest: (url) =>
+        geologyToken && url.includes("/api/geology/")
+          ? { url, headers: { "X-Geocloud-Token": geologyToken } }
+          : { url },
     });
     mapRef.current = map;
     let contourInterval = 20;
@@ -295,14 +291,12 @@ export default function Map2D({
 
       const bounds = map.getBounds();
       if (!bounds) return;
-      const [west, south] = mercatorMeters(bounds.getWest(), bounds.getSouth());
-      const [east, north] = mercatorMeters(bounds.getEast(), bounds.getNorth());
       const canvas = map.getCanvas();
       const params = new URLSearchParams({
-        west: String(west),
-        south: String(south),
-        east: String(east),
-        north: String(north),
+        west: String(bounds.getWest()),
+        south: String(bounds.getSouth()),
+        east: String(bounds.getEast()),
+        north: String(bounds.getNorth()),
         width: String(canvas.clientWidth),
         height: String(canvas.clientHeight),
         x: String(Math.round(e.point.x)),
@@ -313,6 +307,9 @@ export default function Map2D({
       onStatusRef.current("正在查询地质属性…");
       void fetch(`/api/geology/info?${params}`, {
         signal: geologyRequest.signal,
+        headers: geologyToken
+          ? { "X-Geocloud-Token": geologyToken }
+          : undefined,
       })
         .then(async (response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -346,6 +343,7 @@ export default function Map2D({
         type: "raster",
         source: "basemap-src",
         layout: { visibility: "visible" },
+        paint: { "raster-opacity": layersRef.current.opacity.basemap },
       });
 
       map.addSource("labels-src", {
@@ -361,6 +359,7 @@ export default function Map2D({
         type: "raster",
         source: "labels-src",
         layout: { visibility: "visible" },
+        paint: { "raster-opacity": layersRef.current.opacity.labels },
       });
 
       // 3. DOM Layer
@@ -379,7 +378,10 @@ export default function Map2D({
         id: "dom",
         type: "raster",
         source: "dom",
-        paint: { "raster-fade-duration": 0 },
+        paint: {
+          "raster-opacity": layersRef.current.opacity.dom,
+          "raster-fade-duration": 0,
+        },
       });
 
       if (config.geologyAvailable) {
@@ -397,7 +399,10 @@ export default function Map2D({
           layout: {
             visibility: layersRef.current.geology ? "visible" : "none",
           },
-          paint: { "raster-opacity": 0.82, "raster-fade-duration": 0 },
+          paint: {
+            "raster-opacity": layersRef.current.opacity.geology,
+            "raster-fade-duration": 0,
+          },
         });
       }
 
@@ -478,7 +483,7 @@ export default function Map2D({
         },
         paint: {
           "fill-color": "#3b82f6",
-          "fill-opacity": 0.45,
+          "fill-opacity": layersRef.current.opacity.jmd,
         },
       });
       map.addLayer({
@@ -491,6 +496,7 @@ export default function Map2D({
         paint: {
           "line-color": "#1d4ed8",
           "line-width": 2,
+          "line-opacity": layersRef.current.opacity.jmd,
         },
       });
 
@@ -509,7 +515,7 @@ export default function Map2D({
         paint: {
           "line-color": "#2563eb",
           "line-width": 1,
-          "line-opacity": 0.5,
+          "line-opacity": layersRef.current.opacity.contours,
         },
       });
       map.addLayer({
@@ -523,7 +529,7 @@ export default function Map2D({
         paint: {
           "line-color": "#f59e0b",
           "line-width": 2,
-          "line-opacity": 0.9,
+          "line-opacity": layersRef.current.opacity.contours,
         },
       });
       map.addLayer({
@@ -543,6 +549,7 @@ export default function Map2D({
           "text-color": "#92400e",
           "text-halo-color": "#ffffff",
           "text-halo-width": 1.5,
+          "text-opacity": layersRef.current.opacity.contours,
         },
       });
 
@@ -622,7 +629,7 @@ export default function Map2D({
           "visibility",
           state.dom ? "visible" : "none",
         );
-        map.setPaintProperty("dom", "raster-opacity", state.opacity);
+        map.setPaintProperty("dom", "raster-opacity", state.opacity.dom);
       }
 
       onStatusRef.current("二维视图已就绪");
@@ -644,7 +651,7 @@ export default function Map2D({
       mapRef.current = null;
       map.remove();
     };
-  }, [token, boundsKey, domTiles, tiandituToken]);
+  }, [token, boundsKey, domTiles, tiandituToken, geologyToken]);
 
   function mLayerExists(map: mapboxgl.Map, id: string) {
     try {
@@ -659,29 +666,35 @@ export default function Map2D({
     const m = mapRef.current;
     if (!m || !m.isStyleLoaded()) return;
 
-    if (mLayerExists(m, "basemap"))
+    if (mLayerExists(m, "basemap")) {
       m.setLayoutProperty(
         "basemap",
         "visibility",
         layers.basemap ? "visible" : "none",
       );
-    if (mLayerExists(m, "labels"))
+      m.setPaintProperty("basemap", "raster-opacity", layers.opacity.basemap);
+    }
+    if (mLayerExists(m, "labels")) {
       m.setLayoutProperty(
         "labels",
         "visibility",
         layers.labels ? "visible" : "none",
       );
+      m.setPaintProperty("labels", "raster-opacity", layers.opacity.labels);
+    }
 
     if (mLayerExists(m, "dom")) {
       m.setLayoutProperty("dom", "visibility", layers.dom ? "visible" : "none");
-      m.setPaintProperty("dom", "raster-opacity", layers.opacity);
+      m.setPaintProperty("dom", "raster-opacity", layers.opacity.dom);
     }
-    if (mLayerExists(m, "geology"))
+    if (mLayerExists(m, "geology")) {
       m.setLayoutProperty(
         "geology",
         "visibility",
         layers.geology ? "visible" : "none",
       );
+      m.setPaintProperty("geology", "raster-opacity", layers.opacity.geology);
+    }
 
     if (mLayerExists(m, "jmd-fill")) {
       m.setLayoutProperty(
@@ -689,6 +702,7 @@ export default function Map2D({
         "visibility",
         layers.jmd ? "visible" : "none",
       );
+      m.setPaintProperty("jmd-fill", "fill-opacity", layers.opacity.jmd);
     }
     if (mLayerExists(m, "jmd-line")) {
       m.setLayoutProperty(
@@ -696,24 +710,23 @@ export default function Map2D({
         "visibility",
         layers.jmd ? "visible" : "none",
       );
+      m.setPaintProperty("jmd-line", "line-opacity", layers.opacity.jmd);
     }
     for (const id of ["contour-minor", "contour-major", "contour-labels"]) {
-      if (mLayerExists(m, id))
+      if (mLayerExists(m, id)) {
         m.setLayoutProperty(
           id,
           "visibility",
           layers.contours ? "visible" : "none",
         );
+        m.setPaintProperty(
+          id,
+          id === "contour-labels" ? "text-opacity" : "line-opacity",
+          layers.opacity.contours,
+        );
+      }
     }
-  }, [
-    layers.basemap,
-    layers.labels,
-    layers.dom,
-    layers.opacity,
-    layers.jmd,
-    layers.contours,
-    layers.geology,
-  ]);
+  }, [layers]);
 
   // 3. Sensor markers
   useEffect(() => {
@@ -729,6 +742,7 @@ export default function Map2D({
         const el = document.createElement("div");
         el.className = "sensor-marker";
         el.style.cursor = "pointer";
+        el.style.opacity = String(layers.opacity.sensors);
         el.innerHTML = `
           <div style="display: flex; flex-direction: column; align-items: center;">
             <div style="display: flex; align-items: center; gap: 4px; padding: 2px 6px; background: #ffffff; border: 1px solid ${isWarn ? "#f59e0b" : "#2563eb"}; border-radius: 6px; font-size: 11px; color: #0f172a; font-family: ui-monospace, monospace; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.1);">
@@ -744,7 +758,7 @@ export default function Map2D({
         sensorMarkersRef.current.push(marker);
       });
     }
-  }, [layers.sensors]);
+  }, [layers.sensors, layers.opacity.sensors]);
 
   // 4. Clear measure
   useEffect(() => {

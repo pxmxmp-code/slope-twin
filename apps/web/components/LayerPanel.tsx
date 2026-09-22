@@ -1,7 +1,12 @@
-import type { Dispatch, SetStateAction } from "react";
+import {
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type SetStateAction,
+} from "react";
 import { Layers as LayersIcon, SlidersHorizontal, X } from "lucide-react";
 
-import type { Layers, SceneConfig, ViewMode } from "./types";
+import type { LayerKey, Layers, SceneConfig, ViewMode } from "./types";
 import { Slider } from "./ui/slider";
 import { Switch } from "./ui/switch";
 
@@ -11,6 +16,7 @@ type Props = {
   config: SceneConfig | null;
   layers: Layers;
   setLayers: Dispatch<SetStateAction<Layers>>;
+  onGeologyTokenChange: (token: string) => void;
   onClose: () => void;
   onOpen: () => void;
 };
@@ -21,27 +27,61 @@ export function LayerPanel({
   config,
   layers,
   setLayers,
+  onGeologyTokenChange,
   onClose,
   onOpen,
 }: Props) {
-  function row(key: keyof Layers, name: string, description: string) {
+  const [token, setToken] = useState("");
+  const [tokenSaved, setTokenSaved] = useState(false);
+
+  function row(key: LayerKey, name: string, description: string) {
     return (
-      <label htmlFor={`layer-${key}`} className="layer-row">
-        <div>
-          <strong>{name}</strong>
-          <small>{description}</small>
+      <div className="layer-control">
+        <label htmlFor={`layer-${key}`} className="layer-row">
+          <div>
+            <strong>{name}</strong>
+            <small>{description}</small>
+          </div>
+          <Switch
+            className="layer-switch"
+            id={`layer-${key}`}
+            aria-label={name}
+            checked={layers[key]}
+            onCheckedChange={() =>
+              setLayers((current) => ({ ...current, [key]: !current[key] }))
+            }
+          />
+        </label>
+        <div className="opacity">
+          <span>
+            不透明度 <b>{Math.round(layers.opacity[key] * 100)}%</b>
+          </span>
+          <Slider
+            className="mt-2"
+            aria-label={`${name}不透明度`}
+            min={0}
+            max={100}
+            value={[Math.round(layers.opacity[key] * 100)]}
+            disabled={!layers[key]}
+            onValueChange={([value]) =>
+              setLayers((current) => ({
+                ...current,
+                opacity: { ...current.opacity, [key]: value / 100 },
+              }))
+            }
+          />
         </div>
-        <Switch
-          className="layer-switch"
-          id={`layer-${key}`}
-          aria-label={name}
-          checked={Boolean(layers[key])}
-          onCheckedChange={() =>
-            setLayers((current) => ({ ...current, [key]: !current[key] }))
-          }
-        />
-      </label>
+      </div>
     );
+  }
+
+  function saveToken(event: FormEvent) {
+    event.preventDefault();
+    const value = token.trim();
+    if (!value) return;
+    onGeologyTokenChange(value);
+    setToken("");
+    setTokenSaved(true);
   }
 
   if (!open)
@@ -78,26 +118,31 @@ export function LayerPanel({
           <>
             {config?.geologyAvailable &&
               row("geology", "全国 1:50 万地质图", "地质云 WMS · 点击查询属性")}
+            {config?.geologyAvailable && (
+              <form className="token-form" onSubmit={saveToken}>
+                <label htmlFor="geocloud-token">地质云 Token</label>
+                <div>
+                  <input
+                    id="geocloud-token"
+                    type="password"
+                    value={token}
+                    placeholder="粘贴新的 tk"
+                    autoComplete="off"
+                    minLength={20}
+                    pattern="[A-Za-z0-9._-]+"
+                    onChange={(event) => {
+                      setToken(event.target.value);
+                      setTokenSaved(false);
+                    }}
+                  />
+                  <button type="submit" disabled={!token.trim()}>
+                    更新
+                  </button>
+                </div>
+                {tokenSaved && <small>已应用并保存在当前浏览器</small>}
+              </form>
+            )}
             {row("dom", "DOM 正射影像", "航测遥感影像")}
-            <div className="opacity">
-              <span>
-                影像透明度 <b>{Math.round((1 - layers.opacity) * 100)}%</b>
-              </span>
-              <Slider
-                className="mt-2"
-                aria-label="影像透明度"
-                min={0}
-                max={100}
-                value={[Math.round((1 - layers.opacity) * 100)]}
-                disabled={!layers.dom}
-                onValueChange={([value]) =>
-                  setLayers((current) => ({
-                    ...current,
-                    opacity: 1 - value / 100,
-                  }))
-                }
-              />
-            </div>
           </>
         ) : (
           <>{row("model", "三维实景模型", "倾斜摄影 3D Tiles")}</>

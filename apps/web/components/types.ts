@@ -24,16 +24,18 @@ export type SlopeSensor = {
   updatedAt: string;
 };
 
-export type Layers = {
-  basemap: boolean;
-  labels: boolean;
-  dom: boolean;
-  model: boolean;
-  opacity: number;
-  sensors: boolean;
-  jmd: boolean;
-  contours: boolean;
-  geology: boolean;
+export type LayerKey =
+  | "basemap"
+  | "labels"
+  | "dom"
+  | "model"
+  | "sensors"
+  | "jmd"
+  | "contours"
+  | "geology";
+
+export type Layers = Record<LayerKey, boolean> & {
+  opacity: Record<LayerKey, number>;
 };
 
 export type Telemetry = {
@@ -54,6 +56,7 @@ export type PresetPitch = {
 export type ViewProps = {
   config: SceneConfig;
   layers: Layers;
+  geologyToken?: string;
   locate: number;
   measureMode: MeasureType;
   clearMeasureTrigger: number;
@@ -68,11 +71,20 @@ export const DEFAULT_LAYERS: Layers = {
   labels: true,
   dom: true,
   model: true,
-  opacity: 1,
   sensors: true,
   jmd: true,
   contours: true,
   geology: true,
+  opacity: {
+    basemap: 1,
+    labels: 1,
+    dom: 1,
+    model: 1,
+    sensors: 1,
+    jmd: 0.45,
+    contours: 0.75,
+    geology: 0.82,
+  },
 };
 
 export const DEFAULT_TELEMETRY: Telemetry = {

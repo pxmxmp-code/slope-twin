@@ -34,12 +34,22 @@ export default function Workspace() {
   const [presetPitch, setPresetPitch] = useState<PresetPitch | null>(null);
   const [telemetry, setTelemetry] = useState(DEFAULT_TELEMETRY);
   const [fullscreen, setFullscreen] = useState(false);
+  const [geologyToken, setGeologyToken] = useState("");
 
   useEffect(() => {
     const update = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", update);
     return () => document.removeEventListener("fullscreenchange", update);
   }, []);
+
+  useEffect(() => {
+    setGeologyToken(localStorage.getItem("geocloud-token") ?? "");
+  }, []);
+
+  function updateGeologyToken(token: string) {
+    localStorage.setItem("geocloud-token", token);
+    setGeologyToken(token);
+  }
 
   const updateTelemetry = useCallback((next: Partial<Telemetry>) => {
     setTelemetry((current) => ({ ...current, ...next }));
@@ -61,6 +71,7 @@ export default function Workspace() {
     ? {
         config,
         layers,
+        geologyToken,
         locate,
         measureMode,
         clearMeasureTrigger: clearMeasure,
@@ -117,6 +128,7 @@ export default function Workspace() {
               config={config}
               layers={layers}
               setLayers={setLayers}
+              onGeologyTokenChange={updateGeologyToken}
               onClose={() => setLayerPanelOpen(false)}
               onOpen={() => setLayerPanelOpen(true)}
             />

@@ -206,16 +206,42 @@ def test_geology_tiles_proxy_all_queryable_layers_with_token_last(settings):
     assert str(seen[0].url).endswith("tk=secret")
 
 
-def test_geology_feature_info_is_proxied_as_json(settings):
+def test_geology_token_can_be_overridden_per_request(settings):
     seen: list[httpx.Request] = []
-    result = {
-        "type": "FeatureCollection",
-        "features": [{"type": "Feature", "properties": {"时代": "Q"}}],
-    }
 
     def upstream(request: httpx.Request):
         seen.append(request)
-        return httpx.Response(200, json=result)
+        return httpx.Response(200, content=b"\x89PNG\r\n\x1a\nfixture")
+
+    app = create_app(settings)
+    token = "new.header-token_1234567890"
+    with TestClient(app) as client:
+        original = app.state.infrastructure.geocloud_http
+        app.state.infrastructure.geocloud_http = httpx.AsyncClient(
+            transport=httpx.MockTransport(upstream)
+        )
+        response = client.get(
+            "/api/geology/0/0/0.png", headers={"X-Geocloud-Token": token}
+        )
+        invalid = client.get(
+            "/api/geology/0/0/0.png", headers={"X-Geocloud-Token": "bad token"}
+        )
+        app.state.infrastructure.geocloud_http = original
+
+    assert response.status_code == 200
+    assert invalid.status_code == 422
+    assert seen[0].url.params["tk"] == token
+    assert "secret" not in str(seen[0].url)
+
+
+def test_geology_feature_info_is_parsed_as_json(settings):
+    seen: list[httpx.Request] = []
+    result = "<table><tr><td>时代</td><td>岩性</td></tr>" \
+        "<tr><td>Q</td><td>页岩</td></tr></table>"
+
+    def upstream(request: httpx.Request):
+        seen.append(request)
+        return httpx.Response(200, text=result)
 
     app = create_app(settings)
     with TestClient(app) as client:
@@ -226,10 +252,10 @@ def test_geology_feature_info_is_proxied_as_json(settings):
         response = client.get(
             "/api/geology/info",
             params={
-                "west": 100,
-                "south": 200,
-                "east": 300,
-                "north": 400,
+                "west": 98.87,
+                "south": 27.04,
+                "east": 98.89,
+                "north": 27.06,
                 "width": 800,
                 "height": 600,
                 "x": 400,
@@ -239,10 +265,10 @@ def test_geology_feature_info_is_proxied_as_json(settings):
         invalid = client.get(
             "/api/geology/info",
             params={
-                "west": 300,
-                "south": 200,
-                "east": 100,
-                "north": 400,
+                "west": 98.89,
+                "south": 27.04,
+                "east": 98.87,
+                "north": 27.06,
                 "width": 800,
                 "height": 600,
                 "x": 900,
@@ -251,8 +277,16 @@ def test_geology_feature_info_is_proxied_as_json(settings):
         )
         app.state.infrastructure.geocloud_http = original
 
-    assert response.json() == result
+    assert response.json() == {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {"时代": "Q", "岩性": "页岩"}}
+        ],
+    }
     assert invalid.status_code == 422
     assert seen[0].url.params["REQUEST"] == "GetFeatureInfo"
-    assert seen[0].url.params["INFO_FORMAT"] == "application/json"
+    assert seen[0].url.params["LAYERS"] == "t0"
+    assert seen[0].url.params["QUERY_LAYERS"] == "t0"
+    assert seen[0].url.params["SRS"] == "EPSG:4326"
+    assert seen[0].url.params["INFO_FORMAT"] == "text/html"
     assert seen[0].url.params["X"] == "400"

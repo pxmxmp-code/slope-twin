@@ -1,5 +1,7 @@
 import asyncio
+from html.parser import HTMLParser
 import math
+import re
 from urllib.parse import quote
 from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
@@ -8,6 +10,48 @@ import psycopg
 from fastapi import HTTPException
 
 from .config import Settings
+
+
+class FeatureInfoParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs):
+        if tag == "tr":
+            self._row = []
+        elif tag == "td" and self._row is not None:
+            self._cell = []
+
+    def handle_data(self, data: str):
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str):
+        if tag == "td" and self._cell is not None and self._row is not None:
+            self._row.append("".join(self._cell).strip())
+            self._cell = None
+        elif tag == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(self._row)
+            self._row = None
+
+    def feature_collection(self) -> dict[str, object]:
+        if len(self.rows) < 2:
+            return {"type": "FeatureCollection", "features": []}
+        fields, *values = self.rows
+        return {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": dict(zip(fields, row, strict=False)),
+                }
+                for row in values
+            ],
+        }
 
 
 def mercator_bbox(z: int, x: int, y: int) -> tuple[float, float, float, float]:
@@ -111,13 +155,23 @@ class Infrastructure:
             raise HTTPException(502, "GeoServer 未返回 PNG，请检查图层配置")
         return response.content
 
-    async def _geocloud_get(self, params: dict[str, object]) -> httpx.Response:
+    async def _geocloud_get(
+        self, params: dict[str, object], token: str | None = None
+    ) -> httpx.Response:
         if not self.settings.geocloud_wms_url:
             raise HTTPException(503, "地质云 WMS 未配置")
         parsed = urlsplit(self.settings.geocloud_wms_url)
         url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+        credentials = parse_qsl(parsed.query, keep_blank_values=True)
+        if token:
+            if len(token) > 4096 or not re.fullmatch(r"[A-Za-z0-9._-]{20,}", token):
+                raise HTTPException(422, "无效的地质云令牌")
+            credentials = [
+                (key, value) for key, value in credentials if key.lower() != "tk"
+            ]
+            credentials.append(("tk", token))
         # MapGIS rejects the token when WMS parameters are appended after it.
-        query = [*params.items(), *parse_qsl(parsed.query, keep_blank_values=True)]
+        query = [*params.items(), *credentials]
         try:
             response = await self.geocloud_http.get(url, params=query)
             response.raise_for_status()
@@ -136,7 +190,9 @@ class Infrastructure:
             "BBOX": ",".join(map(str, bbox)),
         }
 
-    async def geology_png(self, z: int, x: int, y: int) -> bytes:
+    async def geology_png(
+        self, z: int, x: int, y: int, token: str | None = None
+    ) -> bytes:
         params = self._geocloud_params("GetMap", mercator_bbox(z, x, y))
         params.update(
             WIDTH=256,
@@ -144,7 +200,7 @@ class Infrastructure:
             FORMAT="image/png",
             TRANSPARENT="TRUE",
         )
-        response = await self._geocloud_get(params)
+        response = await self._geocloud_get(params, token)
         if not response.content.startswith(b"\x89PNG\r\n\x1a\n"):
             raise HTTPException(502, "地质云未返回地图图像，令牌可能已失效")
         return response.content
@@ -156,23 +212,26 @@ class Infrastructure:
         height: int,
         x: int,
         y: int,
+        token: str | None = None,
     ) -> object:
         params = self._geocloud_params("GetFeatureInfo", bbox)
+        query_layer = self.settings.geocloud_wms_layers.split(",", 1)[0].strip()
         params.update(
-            QUERY_LAYERS=self.settings.geocloud_wms_layers,
+            LAYERS=query_layer,
+            QUERY_LAYERS=query_layer,
+            SRS="EPSG:4326",
             WIDTH=width,
             HEIGHT=height,
             X=x,
             Y=y,
             FORMAT="image/png",
-            INFO_FORMAT="application/json",
+            INFO_FORMAT="text/html",
             FEATURE_COUNT=10,
         )
-        response = await self._geocloud_get(params)
-        try:
-            return response.json()
-        except ValueError as error:
-            raise HTTPException(502, "地质云未返回可解析的属性数据") from error
+        response = await self._geocloud_get(params, token)
+        parser = FeatureInfoParser()
+        parser.feed(response.text)
+        return parser.feature_collection()
 
     async def contours(self, interval: int) -> dict[str, object]:
         try:
