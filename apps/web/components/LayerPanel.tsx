@@ -2,38 +2,133 @@ import {
   useState,
   type Dispatch,
   type FormEvent,
+  type ReactNode,
   type SetStateAction,
 } from "react";
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   Building2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Globe2,
   Image as ImageIcon,
+  Info,
   KeyRound,
   Layers as LayersIcon,
   MapPin,
   Mountain,
-  SlidersHorizontal,
+  Settings2,
   Spline,
   Waypoints,
   X,
+  ZoomIn,
 } from "lucide-react";
 
 import type { LayerKey, Layers, SceneConfig, ViewMode } from "./types";
 import { Slider } from "./ui/slider";
 import { Switch } from "./ui/switch";
 
+type Category = "all" | "base" | "topic" | "mine";
+type LayerDefinition = {
+  name: string;
+  description: string;
+  category: Exclude<Category, "all">;
+  badge: string;
+  icon: ReactNode;
+  source: string;
+  type: string;
+};
+
 type Props = {
   open: boolean;
   mode: ViewMode;
   config: SceneConfig | null;
   layers: Layers;
+  layerOrder: LayerKey[];
   setLayers: Dispatch<SetStateAction<Layers>>;
+  setLayerOrder: Dispatch<SetStateAction<LayerKey[]>>;
   onGeologyTokenChange: (token: string) => void;
+  onLocate: () => void;
   onClose: () => void;
   onOpen: () => void;
+};
+
+const DEFINITIONS: Record<LayerKey, LayerDefinition> = {
+  sensors: {
+    name: "边坡监测站网",
+    description: "GNSS / 裂缝 / 倾角传感阵列",
+    category: "mine",
+    badge: "我的",
+    icon: <Activity />,
+    source: "边坡实时监测系统",
+    type: "监测点位",
+  },
+  contours: {
+    name: "地形等高线",
+    description: "高程骨干曲线与首曲线",
+    category: "base",
+    badge: "基础",
+    icon: <Spline />,
+    source: "高程数据",
+    type: "矢量线",
+  },
+  jmd: {
+    name: "JMD 居民地要素",
+    description: "建筑与居住区矢量边界",
+    category: "topic",
+    badge: "专题",
+    icon: <Building2 />,
+    source: "居民地专题数据",
+    type: "矢量面",
+  },
+  labels: {
+    name: "中文地名注记",
+    description: "行政区划与兴趣点标注",
+    category: "topic",
+    badge: "专题",
+    icon: <MapPin />,
+    source: "天地图 / Carto",
+    type: "栅格注记",
+  },
+  geology: {
+    name: "全国 1:50万 地质图",
+    description: "地质云 WMS · 支持拾取查询",
+    category: "topic",
+    badge: "专题",
+    icon: <Waypoints />,
+    source: "地质云 WMS",
+    type: "栅格瓦片",
+  },
+  dom: {
+    name: "DOM 正射影像",
+    description: "无人机高分辨率影像",
+    category: "base",
+    badge: "基础",
+    icon: <ImageIcon />,
+    source: "项目航测成果",
+    type: "栅格瓦片",
+  },
+  model: {
+    name: "三维实景模型",
+    description: "倾斜摄影 3D Tiles 模型流",
+    category: "base",
+    badge: "基础",
+    icon: <Mountain />,
+    source: "项目倾斜摄影成果",
+    type: "3D Tiles",
+  },
+  basemap: {
+    name: "电子底图",
+    description: "基础地形与道路水系网",
+    category: "base",
+    badge: "基础",
+    icon: <Globe2 />,
+    source: "天地图 / Carto",
+    type: "栅格瓦片",
+  },
 };
 
 export function LayerPanel({
@@ -41,98 +136,71 @@ export function LayerPanel({
   mode,
   config,
   layers,
+  layerOrder,
   setLayers,
+  setLayerOrder,
   onGeologyTokenChange,
+  onLocate,
   onClose,
   onOpen,
 }: Props) {
+  const [category, setCategory] = useState<Category>("all");
+  const [selected, setSelected] = useState<LayerKey | null>("contours");
+  const [collapsed, setCollapsed] = useState(false);
   const [token, setToken] = useState("");
   const [tokenSaved, setTokenSaved] = useState(false);
   const [tokenExpanded, setTokenExpanded] = useState(false);
 
-  // Count active layers
-  const activeCount = Object.entries(layers).reduce((acc, [key, val]) => {
-    if (key === "opacity") return acc;
-    if (mode === "2d" && key === "model") return acc;
-    if (mode === "3d" && (key === "dom" || key === "geology")) return acc;
-    return val ? acc + 1 : acc;
-  }, 0);
+  const availableKeys = layerOrder.filter(
+    (key) =>
+      key !== (mode === "2d" ? "model" : "dom") &&
+      !(mode === "3d" && key === "geology") &&
+      !(key === "geology" && !config?.geologyAvailable),
+  );
+  const shownKeys = availableKeys.filter(
+    (key) => category === "all" || DEFINITIONS[key].category === category,
+  );
+  const selectedKey =
+    selected && availableKeys.includes(selected) ? selected : null;
+  const activeCount = availableKeys.filter((key) => layers[key]).length;
+  const categories: Array<{ key: Category; label: string }> = [
+    { key: "all", label: "全部" },
+    { key: "base", label: "基础" },
+    { key: "topic", label: "专题" },
+    { key: "mine", label: "我的" },
+  ];
 
-  function renderLayerRow({
-    key,
-    name,
-    description,
-    icon,
-    legend,
-  }: {
-    key: LayerKey;
-    name: string;
-    description: string;
-    icon: React.ReactNode;
-    legend?: React.ReactNode;
-  }) {
-    const isChecked = Boolean(layers[key]);
-    const opacityPct = Math.round(layers.opacity[key] * 100);
+  function countCategory(key: Category) {
+    return key === "all"
+      ? availableKeys.length
+      : availableKeys.filter((item) => DEFINITIONS[item].category === key)
+          .length;
+  }
 
-    return (
-      <div
-        className={`layer-control transition-all duration-200 ${
-          isChecked ? "active" : ""
-        }`}
-      >
-        <label htmlFor={`layer-${key}`} className="layer-row">
-          <div className="layer-row-info">
-            <div
-              className={`layer-icon-badge ${
-                isChecked
-                  ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
-                  : "bg-slate-800/80 text-slate-400 border border-white/5"
-              }`}
-            >
-              {icon}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <strong className="truncate">{name}</strong>
-                {legend}
-              </div>
-              <small className="truncate">{description}</small>
-            </div>
-          </div>
-          <Switch
-            className="layer-switch"
-            id={`layer-${key}`}
-            aria-label={name}
-            checked={isChecked}
-            onCheckedChange={() =>
-              setLayers((current) => ({ ...current, [key]: !current[key] }))
-            }
-          />
-        </label>
+  function setVisible(key: LayerKey, checked: boolean) {
+    setLayers((current) => ({ ...current, [key]: checked }));
+  }
 
-        {isChecked && (
-          <div className="opacity">
-            <span>
-              <span>不透明度</span>
-              <b>{opacityPct}%</b>
-            </span>
-            <Slider
-              className="mt-1.5"
-              aria-label={`${name}不透明度`}
-              min={0}
-              max={100}
-              value={[opacityPct]}
-              onValueChange={([value]) =>
-                setLayers((current) => ({
-                  ...current,
-                  opacity: { ...current.opacity, [key]: value / 100 },
-                }))
-              }
-            />
-          </div>
-        )}
-      </div>
-    );
+  function moveLayer(key: LayerKey, offset: -1 | 1) {
+    setLayerOrder((current) => {
+      const visible = current.filter((item) => availableKeys.includes(item));
+      const from = visible.indexOf(key);
+      const target = from + offset;
+      if (from < 0 || target < 0 || target >= visible.length) return current;
+      const neighbor = visible[target];
+      if (
+        [key, neighbor].some((item) => item === "sensors" || item === "basemap")
+      )
+        return current;
+      const next = [...current];
+      const fromIndex = next.indexOf(key);
+      const targetIndex = next.indexOf(neighbor);
+      [next[fromIndex], next[targetIndex]] = [
+        next[targetIndex],
+        next[fromIndex],
+      ];
+      return next;
+    });
   }
 
   function saveToken(event: FormEvent) {
@@ -144,142 +212,141 @@ export function LayerPanel({
     setTokenSaved(true);
   }
 
-  if (!open) {
+  if (!open)
     return (
-      <button
-        type="button"
-        className="absolute bottom-4 right-4 z-30 flex items-center gap-2 bg-slate-900/85 backdrop-blur-xl border border-sky-500/30 hover:border-sky-400 rounded-full px-3.5 py-2 shadow-2xl text-xs font-medium text-slate-200 hover:text-white transition-all cursor-pointer group"
-        onClick={onOpen}
-        title="展开图层控制面板"
-      >
-        <div className="w-5 h-5 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400 border border-sky-500/40 group-hover:scale-110 transition-transform">
-          <LayersIcon className="w-3 h-3" />
-        </div>
-        <span>图层控制</span>
-        <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 font-mono text-[10px]">
-          {activeCount}
+      <button type="button" className="layer-panel-trigger" onClick={onOpen}>
+        <span className="layer-panel-trigger-icon">
+          <LayersIcon />
         </span>
+        <span>图层配置</span>
+        <span className="layer-panel-trigger-count">{activeCount}</span>
       </button>
     );
-  }
+
+  const detail = selectedKey ? DEFINITIONS[selectedKey] : null;
+  const selectedIndex = selectedKey ? availableKeys.indexOf(selectedKey) : -1;
+  const canMoveUp =
+    selectedIndex > 0 &&
+    selectedKey !== "sensors" &&
+    availableKeys[selectedIndex - 1] !== "sensors";
+  const canMoveDown =
+    selectedIndex >= 0 &&
+    selectedIndex < availableKeys.length - 1 &&
+    selectedKey !== "basemap" &&
+    availableKeys[selectedIndex + 1] !== "basemap";
 
   return (
-    <div className="floating-layer-panel">
-      {/* Panel Header */}
-      <div className="panel-header">
-        <div className="panel-title">
-          <SlidersHorizontal className="w-4 h-4 text-sky-400" />
-          <span>图层配置</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 font-mono text-[10px] border border-sky-500/30">
-            {activeCount} 开启
+    <>
+      <aside
+        className={`floating-layer-panel ${collapsed ? "collapsed" : ""}`}
+        aria-label="图层配置"
+      >
+        <header className="panel-header">
+          <span className="panel-title-icon">
+            <LayersIcon />
           </span>
-        </div>
-        <button
-          type="button"
-          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-          title="收起图层面板"
-          onClick={onClose}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
+          <span className="panel-title-copy">
+            <strong>图层配置</strong>
+            <small>
+              {collapsed
+                ? `${activeCount} 个图层正在显示`
+                : "管理地图图层的显示与样式"}
+            </small>
+          </span>
+          <button
+            type="button"
+            className="panel-collapse"
+            aria-label={collapsed ? "展开图层配置" : "收起图层配置"}
+            title={collapsed ? "展开" : "收起"}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? <ChevronDown /> : <ChevronUp />}
+          </button>
+          <button
+            type="button"
+            className="panel-close"
+            aria-label="关闭图层配置"
+            onClick={() => {
+              setCollapsed(false);
+              onClose();
+            }}
+          >
+            <X />
+          </button>
+        </header>
 
-      {/* Panel Scrollable Body */}
-      <div className="panel-body">
-        {/* Category 1: 航测遥感与实景 */}
-        <div className="section-label">航测遥感与实景</div>
-        {mode === "3d"
-          ? renderLayerRow({
-              key: "model",
-              name: "三维实景模型",
-              description: "倾斜摄影 3D Tiles 模型流",
-              icon: <Mountain className="w-3.5 h-3.5" />,
-            })
-          : renderLayerRow({
-              key: "dom",
-              name: "DOM 正射影像",
-              description: "无人机超高分航测影像",
-              icon: <ImageIcon className="w-3.5 h-3.5" />,
+        <nav className="layer-categories" aria-label="图层分类">
+          {categories.map((item) => (
+            <button
+              type="button"
+              key={item.key}
+              className={category === item.key ? "active" : ""}
+              onClick={() => setCategory(item.key)}
+            >
+              {item.label}
+              <span>{countCategory(item.key)}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="panel-body">
+          <div className="layer-list">
+            {shownKeys.map((key) => {
+              const item = DEFINITIONS[key];
+              return (
+                <article
+                  key={key}
+                  className={`layer-card ${selectedKey === key ? "selected" : ""}`}
+                  onClick={() => setSelected(key)}
+                >
+                  <span className="layer-card-icon">{item.icon}</span>
+                  <span className="layer-card-copy">
+                    <span className="layer-card-title">
+                      <strong>{item.name}</strong>
+                      <i className={`layer-badge ${item.category}`}>
+                        {item.badge}
+                      </i>
+                    </span>
+                    <small>{item.description}</small>
+                  </span>
+                  <Switch
+                    aria-label={item.name}
+                    checked={layers[key]}
+                    onClick={(event) => event.stopPropagation()}
+                    onCheckedChange={(value) => setVisible(key, value)}
+                  />
+                  <button
+                    type="button"
+                    className="layer-detail-trigger"
+                    aria-label={`配置${item.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelected(key);
+                    }}
+                  >
+                    <ChevronRight />
+                  </button>
+                </article>
+              );
             })}
+          </div>
 
-        {/* Category 2: 地表与地貌要素 */}
-        <div className="section-label">地表地形要素</div>
-        {renderLayerRow({
-          key: "jmd",
-          name: "JMD 居民地要素",
-          description: "建筑与居住区矢量边界",
-          icon: <Building2 className="w-3.5 h-3.5" />,
-          legend: (
-            <span
-              className="inline-block w-2 h-2 rounded-sm bg-sky-400/80 border border-sky-300 shadow-[0_0_4px_rgba(56,189,248,0.6)]"
-              title="居民地矢量色标"
-            />
-          ),
-        })}
-        {renderLayerRow({
-          key: "contours",
-          name: "地形等高线",
-          description: "高程骨干曲线与首曲线",
-          icon: <Spline className="w-3.5 h-3.5" />,
-          legend: (
-            <span className="flex items-center gap-1 text-[9px] font-mono text-slate-400">
-              <span
-                className="w-2.5 h-0.5 rounded bg-sky-400"
-                title="2m 曲线"
-              />
-              <span
-                className="w-2.5 h-0.5 rounded bg-amber-400"
-                title="20m 主曲线"
-              />
-            </span>
-          ),
-        })}
-
-        {/* Category 3: 感知监测点位 */}
-        <div className="section-label">实时感知监测</div>
-        {renderLayerRow({
-          key: "sensors",
-          name: "边坡监测站网",
-          description: "GNSS/裂缝/倾角传感阵列",
-          icon: <Activity className="w-3.5 h-3.5 text-emerald-400" />,
-          legend: (
-            <span
-              className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]"
-              title="感知在线"
-            />
-          ),
-        })}
-
-        {/* Category 4: 专项与地质云 (2D mode) */}
-        {mode === "2d" && config?.geologyAvailable && (
-          <>
-            <div className="section-label">专项与地质云</div>
-            {renderLayerRow({
-              key: "geology",
-              name: "全国 1:50万 地质图",
-              description: "地质云 WMS · 支持拾取查询",
-              icon: <Waypoints className="w-3.5 h-3.5" />,
-            })}
-
-            <div className="mt-1">
+          {mode === "2d" && config?.geologyAvailable && (
+            <section className="token-section">
+              <div className="section-label">地质云服务</div>
               <button
                 type="button"
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] text-slate-400 hover:text-sky-300 bg-slate-900/40 rounded-md border border-white/5 transition-colors cursor-pointer"
-                onClick={() => setTokenExpanded((v) => !v)}
+                className="token-trigger"
+                onClick={() => setTokenExpanded((value) => !value)}
               >
-                <span className="flex items-center gap-1.5">
-                  <KeyRound className="w-3 h-3 text-sky-400" />
+                <span>
+                  <KeyRound />
                   配置地质云 Token
                 </span>
-                {tokenExpanded ? (
-                  <ChevronUp className="w-3 h-3" />
-                ) : (
-                  <ChevronDown className="w-3 h-3" />
-                )}
+                {tokenExpanded ? <ChevronUp /> : <ChevronDown />}
               </button>
-
               {tokenExpanded && (
-                <form className="token-form mt-1.5" onSubmit={saveToken}>
+                <form className="token-form" onSubmit={saveToken}>
                   <label htmlFor="geocloud-token">地质云 Token (tk)</label>
                   <div>
                     <input
@@ -302,31 +369,118 @@ export function LayerPanel({
                   {tokenSaved && <small>已应用并保存在当前浏览器缓存</small>}
                 </form>
               )}
+            </section>
+          )}
+        </div>
+      </aside>
+
+      {!collapsed && selectedKey && detail && (
+        <aside className="layer-detail-panel" aria-label={`${detail.name}设置`}>
+          <header className="detail-header">
+            <span className="layer-card-icon">{detail.icon}</span>
+            <span>
+              <strong>{detail.name}</strong>
+              <small>{detail.description}</small>
+            </span>
+            <button
+              type="button"
+              aria-label="关闭图层详情"
+              onClick={() => setSelected(null)}
+            >
+              <X />
+            </button>
+          </header>
+
+          <div className="detail-visibility">
+            <strong>显示图层</strong>
+            <Switch
+              aria-label={`显示${detail.name}`}
+              checked={layers[selectedKey]}
+              onCheckedChange={(value) => setVisible(selectedKey, value)}
+            />
+          </div>
+
+          <section className="detail-section">
+            <h3>
+              <Settings2 />
+              样式设置
+            </h3>
+            <div className="detail-setting">
+              <label>不透明度</label>
+              <Slider
+                aria-label={`${detail.name}不透明度`}
+                min={0}
+                max={100}
+                value={[Math.round(layers.opacity[selectedKey] * 100)]}
+                onValueChange={([value]) =>
+                  setLayers((current) => ({
+                    ...current,
+                    opacity: {
+                      ...current.opacity,
+                      [selectedKey]: value / 100,
+                    },
+                  }))
+                }
+              />
+              <output>{Math.round(layers.opacity[selectedKey] * 100)}%</output>
             </div>
-          </>
-        )}
+            <div className="detail-order">
+              <span>
+                <small>叠放顺序</small>
+                <strong>第 {selectedIndex + 1} 层</strong>
+              </span>
+              <span>
+                <button
+                  type="button"
+                  disabled={!canMoveUp}
+                  aria-label="上移图层"
+                  onClick={() => moveLayer(selectedKey, -1)}
+                >
+                  <ArrowUp />
+                </button>
+                <button
+                  type="button"
+                  disabled={!canMoveDown}
+                  aria-label="下移图层"
+                  onClick={() => moveLayer(selectedKey, 1)}
+                >
+                  <ArrowDown />
+                </button>
+              </span>
+            </div>
+          </section>
 
-        {/* Category 5: 基础地理底图 */}
-        <div className="section-label">基础地理底图</div>
-        {renderLayerRow({
-          key: "basemap",
-          name: "电子底图",
-          description: "基础地形与道路水系网",
-          icon: <Globe2 className="w-3.5 h-3.5" />,
-        })}
-        {renderLayerRow({
-          key: "labels",
-          name: "中文地名注记",
-          description: "行政区划与兴趣点标注",
-          icon: <MapPin className="w-3.5 h-3.5" />,
-        })}
+          <section className="detail-section layer-info">
+            <h3>
+              <Info />
+              图层信息
+            </h3>
+            <dl>
+              <div>
+                <dt>数据来源</dt>
+                <dd>{detail.source}</dd>
+              </div>
+              <div>
+                <dt>图层类型</dt>
+                <dd>{detail.type}</dd>
+              </div>
+              <div>
+                <dt>坐标系</dt>
+                <dd>WGS 84</dd>
+              </div>
+              <div>
+                <dt>状态</dt>
+                <dd>{layers[selectedKey] ? "正在显示" : "已关闭"}</dd>
+              </div>
+            </dl>
+          </section>
 
-        {config && !config.tiandituToken && (
-          <p className="notice mt-1">
-            天地图密钥未配置，当前已自动启用 Carto 高精度底图。
-          </p>
-        )}
-      </div>
-    </div>
+          <button type="button" className="zoom-layer" onClick={onLocate}>
+            <ZoomIn />
+            缩放至图层范围
+          </button>
+        </aside>
+      )}
+    </>
   );
 }

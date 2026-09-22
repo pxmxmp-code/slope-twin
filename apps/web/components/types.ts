@@ -56,6 +56,7 @@ export type PresetPitch = {
 export type ViewProps = {
   config: SceneConfig;
   layers: Layers;
+  layerOrder: LayerKey[];
   geologyToken?: string;
   locate: number;
   measureMode: MeasureType;
@@ -86,6 +87,18 @@ export const DEFAULT_LAYERS: Layers = {
     geology: 0.82,
   },
 };
+
+// Top to bottom, matching the visual stack shown in the layer panel.
+export const DEFAULT_LAYER_ORDER: LayerKey[] = [
+  "sensors",
+  "contours",
+  "jmd",
+  "labels",
+  "geology",
+  "dom",
+  "model",
+  "basemap",
+];
 
 export const DEFAULT_TELEMETRY: Telemetry = {
   lon: 98.88215,

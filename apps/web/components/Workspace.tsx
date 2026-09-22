@@ -17,6 +17,7 @@ import { LayerPanel } from "./LayerPanel";
 import { MapToolbar } from "./MapToolbar";
 import {
   DEFAULT_LAYERS,
+  DEFAULT_LAYER_ORDER,
   DEFAULT_TELEMETRY,
   type MeasureType,
   type PresetPitch,
@@ -35,6 +36,7 @@ export default function Workspace() {
   const { config, error, retry } = useSceneConfig();
   const [mode, setMode] = useState<ViewMode>("2d");
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
+  const [layerOrder, setLayerOrder] = useState(DEFAULT_LAYER_ORDER);
   const [layerPanelOpen, setLayerPanelOpen] = useState(true);
   const [locate, setLocate] = useState(0);
   const [status, setStatus] = useState("正在连接数字孪生底座…");
@@ -81,6 +83,7 @@ export default function Workspace() {
     ? {
         config,
         layers,
+        layerOrder,
         geologyToken,
         locate,
         measureMode,
@@ -147,8 +150,11 @@ export default function Workspace() {
               mode={mode}
               config={config}
               layers={layers}
+              layerOrder={layerOrder}
               setLayers={setLayers}
+              setLayerOrder={setLayerOrder}
               onGeologyTokenChange={updateGeologyToken}
+              onLocate={() => setLocate((value) => value + 1)}
               onClose={() => setLayerPanelOpen(false)}
               onOpen={() => setLayerPanelOpen(true)}
             />

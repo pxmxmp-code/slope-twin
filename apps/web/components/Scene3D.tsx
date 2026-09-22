@@ -120,6 +120,7 @@ function addContours(
 export default function Scene3D({
   config,
   layers,
+  layerOrder,
   locate,
   measureMode,
   clearMeasureTrigger,
@@ -494,8 +495,17 @@ export default function Scene3D({
       img.labels.show = layers.labels;
       img.labels.alpha = layers.opacity.labels;
     }
+    for (const key of [...layerOrder].reverse()) {
+      const imagery =
+        key === "basemap"
+          ? img.basemap
+          : key === "labels"
+            ? img.labels
+            : undefined;
+      if (imagery) viewer.imageryLayers.raiseToTop(imagery);
+    }
     viewer.scene.requestRender();
-  }, [layers, viewerReady]);
+  }, [layers, layerOrder, viewerReady]);
 
   // 3D Slope Sensors Pins
   useEffect(() => {

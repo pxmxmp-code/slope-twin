@@ -10,6 +10,17 @@ import {
   type ViewProps,
 } from "./types";
 
+const MAP_LAYER_IDS = {
+  basemap: ["basemap"],
+  labels: ["labels"],
+  dom: ["dom"],
+  geology: ["geology"],
+  jmd: ["jmd-fill", "jmd-line"],
+  contours: ["contour-minor", "contour-major", "contour-labels"],
+  sensors: [],
+  model: [],
+} as const;
+
 type JmdProperties = {
   id?: number;
   xm?: string;
@@ -152,6 +163,7 @@ function calculateDistance(coords: [number, number][]): {
 export default function Map2D({
   config,
   layers,
+  layerOrder,
   geologyToken,
   locate,
   measureMode,
@@ -172,6 +184,8 @@ export default function Map2D({
   measureModeRef.current = measureMode;
   const layersRef = useRef(layers);
   layersRef.current = layers;
+  const layerOrderRef = useRef(layerOrder);
+  layerOrderRef.current = layerOrder;
 
   const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const [measureDist, setMeasureDist] = useState(0);
@@ -631,6 +645,7 @@ export default function Map2D({
         );
         map.setPaintProperty("dom", "raster-opacity", state.opacity.dom);
       }
+      applyLayerOrder(map, layerOrderRef.current);
 
       onStatusRef.current("二维视图已就绪");
     });
@@ -659,6 +674,16 @@ export default function Map2D({
     } catch {
       return false;
     }
+  }
+
+  function applyLayerOrder(map: mapboxgl.Map, order: typeof layerOrder) {
+    for (const key of [...order].reverse())
+      for (const id of MAP_LAYER_IDS[key])
+        if (mLayerExists(map, id)) map.moveLayer(id);
+
+    // Operational graphics must stay interactive above configurable data.
+    for (const id of ["project-bounds-line", "measure-lines", "measure-points"])
+      if (mLayerExists(map, id)) map.moveLayer(id);
   }
 
   // 2. Update layers visibility smoothly without rebuilding the map
@@ -726,7 +751,8 @@ export default function Map2D({
         );
       }
     }
-  }, [layers]);
+    applyLayerOrder(m, layerOrder);
+  }, [layers, layerOrder]);
 
   // 3. Sensor markers
   useEffect(() => {
