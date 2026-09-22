@@ -4,6 +4,7 @@ export type SceneConfig = {
   bounds: [number, number, number, number];
   domTiles: string;
   tilesetUrl: string;
+  groundElevation: number;
 };
 
 export type ViewMode = "2d" | "3d";
@@ -30,6 +31,7 @@ export type Layers = {
   opacity: number;
   sensors: boolean;
   jmd: boolean;
+  contours: boolean;
 };
 
 export type Telemetry = {
@@ -67,6 +69,7 @@ export const DEFAULT_LAYERS: Layers = {
   opacity: 1,
   sensors: true,
   jmd: true,
+  contours: true,
 };
 
 export const DEFAULT_TELEMETRY: Telemetry = {

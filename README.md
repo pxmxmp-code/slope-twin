@@ -6,10 +6,10 @@
 
 项目只有两种运行方式，不再混用：
 
-| 场景 | Web / API | PostGIS / GeoServer / MinIO |
-| --- | --- | --- |
-| 日常开发 | 本机进程，支持热更新 | 统一使用 `192.168.1.110` |
-| 最终部署 | Docker Compose 中的 `web`、`api` | 仍使用 `192.168.1.110` |
+| 场景     | Web / API                        | PostGIS / GeoServer / MinIO |
+| -------- | -------------------------------- | --------------------------- |
+| 日常开发 | 本机进程，支持热更新             | 统一使用 `192.168.1.110`    |
+| 最终部署 | Docker Compose 中的 `web`、`api` | 仍使用 `192.168.1.110`      |
 
 Compose 不创建数据库、GeoServer 或 MinIO，也不用于开发。3D Tiles 始终由 API 从服务器 MinIO 流式代理，不再读取仓库下的本地瓦片目录。
 
@@ -78,19 +78,24 @@ rtk docker compose down
 
 ## 配置
 
-| 变量 | 用途 |
-| --- | --- |
-| `MAPBOX_TOKEN` | 二维 Mapbox GL 引擎的浏览器公共令牌 |
-| `TIANDITU_TOKEN` | 天地图矢量底图与中文注记；为空时使用 Carto 浅色底图 |
-| `BACKEND_URL` | Next.js 同源代理目标；本机为 `127.0.0.1:8000` |
-| `DATABASE_URL` | API 访问服务器 PostGIS |
-| `GEOSERVER_WMS_URL` | API 访问服务器 DOM WMS |
-| `GEOSERVER_DOM_LAYER` | DOM 图层名 |
-| `MINIO_ENDPOINT` / `MINIO_BUCKET` | API 访问服务器 3D Tiles |
-| `DOM_BOUNDS` | 项目范围，顺序为西、南、东、北 |
-| `WEB_PORT` / `API_PORT` | 最终容器部署端口 |
+| 变量                              | 用途                                                |
+| --------------------------------- | --------------------------------------------------- |
+| `MAPBOX_TOKEN`                    | 二维 Mapbox GL 引擎的浏览器公共令牌                 |
+| `TIANDITU_TOKEN`                  | 天地图矢量底图与中文注记；为空时使用 Carto 浅色底图 |
+| `BACKEND_URL`                     | Next.js 同源代理目标；本机为 `127.0.0.1:8000`       |
+| `DATABASE_URL`                    | API 访问服务器 PostGIS                              |
+| `GEOSERVER_WMS_URL`               | API 访问服务器 DOM WMS                              |
+| `GEOSERVER_WFS_URL`               | API 访问服务器等高线 WFS                            |
+| `GEOSERVER_DOM_LAYER`             | DOM 图层名                                          |
+| `GEOSERVER_CONTOUR_LAYER`         | 三维场景使用的等高线图层名                          |
+| `MINIO_ENDPOINT` / `MINIO_BUCKET` | API 访问服务器 3D Tiles                             |
+| `DOM_BOUNDS`                      | 项目范围，顺序为西、南、东、北                      |
+| `GROUND_ELEVATION`                | 三维本地高程基准，当前取等高线最低值 `1208` 米      |
+| `WEB_PORT` / `API_PORT`           | 最终容器部署端口                                    |
 
 浏览器只访问 `/api/*` 和 `/tiles/*`。数据库地址、密码及内部服务地址不会由 `/api/config` 返回。
+
+等高线由二维、三维场景共享同一个开关，并按视野尺度从 GeoServer 分级请求：远景 20 米、中景 10 米、近景 2 米，避免首屏加载全部 939 条曲线。
 
 ## 验证
 

@@ -111,11 +111,6 @@ export default function Workspace() {
               </div>
             )}
 
-            <div className="view-caption">
-              <span className="live-dot" />
-              <span>{mode === "2d" ? "二维地图模式" : "三维实景模式"}</span>
-            </div>
-
             <LayerPanel
               open={layerPanelOpen}
               mode={mode}

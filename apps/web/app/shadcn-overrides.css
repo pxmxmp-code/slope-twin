@@ -43,6 +43,21 @@
   flex-shrink: 0;
 }
 
+.layer-switch {
+  width: 28px !important;
+  height: 16px !important;
+  border-width: 1px !important;
+}
+
+.layer-switch span {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.layer-switch[data-state="checked"] span {
+  transform: translateX(12px) !important;
+}
+
 /* Switch modern clean styling */
 button[data-state="checked"] {
   background-color: #2563eb !important;

@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "concurrently -k -n web,api \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm run dev --workspace @slope-twin/web",
-    "dev:api": "uv run --project apps/api uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port 8000 --reload --reload-dir apps/api/app",
+    "dev:api": "WATCHFILES_FORCE_POLLING=true uv run --project apps/api uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port 8000 --reload --reload-dir apps/api/app",
     "build": "npm run build --workspace @slope-twin/web",
     "typecheck": "npm run typecheck --workspace @slope-twin/web",
     "test:api": "uv run --project apps/api pytest apps/api/tests -q",

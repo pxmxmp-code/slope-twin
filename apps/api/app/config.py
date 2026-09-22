@@ -27,9 +27,12 @@ class Settings(BaseSettings):
 
     database_url: str = ""
     geoserver_wms_url: str = "http://192.168.1.110:8080/geoserver/ne/wms"
+    geoserver_wfs_url: str = "http://192.168.1.110:8080/geoserver/ne/wfs"
     geoserver_dom_layer: str = "ne:DOM_COG"
+    geoserver_contour_layer: str = "ne:majiadi_contours"
     minio_endpoint: str = "http://192.168.1.110:29000"
     minio_bucket: str = "slope-twin"
+    ground_elevation: float = 1208
 
     @field_validator("dom_bounds")
     @classmethod
@@ -49,4 +52,5 @@ class Settings(BaseSettings):
             "bounds": self.dom_bounds,
             "domTiles": "/api/dom/{z}/{x}/{y}.png",
             "tilesetUrl": "/tiles/tileset.json",
+            "groundElevation": self.ground_elevation,
         }

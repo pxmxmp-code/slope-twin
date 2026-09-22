@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import PurePosixPath
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 
@@ -56,6 +56,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/features/jmd")
     async def jmd_features(request: Request):
         return await infrastructure(request).jmd_features()
+
+    @app.get("/api/features/contours")
+    async def contours(
+        request: Request,
+        interval: int = Query(20),
+    ):
+        if interval not in {2, 10, 20}:
+            raise HTTPException(422, "等高线间距只支持 2、10 或 20 米")
+        return await infrastructure(request).contours(interval)
 
     @app.get("/api/dom/{z}/{x}/{y}.png")
     async def dom_tile(z: int, x: int, y: int, request: Request):

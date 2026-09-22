@@ -32,6 +32,7 @@ export function LayerPanel({
           <small>{description}</small>
         </div>
         <Switch
+          className="layer-switch"
           id={`layer-${key}`}
           aria-label={name}
           checked={Boolean(layers[key])}
@@ -47,7 +48,7 @@ export function LayerPanel({
     return (
       <button
         type="button"
-        className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-full px-3.5 py-1.5 shadow-md text-xs font-medium text-slate-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer"
+        className="absolute bottom-4 right-4 z-30 flex items-center gap-1.5 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-full px-3 py-1.5 shadow-md text-[11px] font-medium text-slate-700 hover:text-blue-600 hover:border-blue-300 transition-all cursor-pointer"
         onClick={onOpen}
         title="展开图层控制"
       >
@@ -72,6 +73,7 @@ export function LayerPanel({
         {row("basemap", "电子地图", "基础地理背景")}
         {row("labels", "中文注记", "地名与道路名称")}
         {row("jmd", "JMD 居民地要素", "建筑物与居住区范围矢量")}
+        {row("contours", "等高线", "蓝色 2m · 橙色 20m 主曲线")}
         {mode === "2d" ? (
           <>
             {row("dom", "DOM 正射影像", "航测遥感影像")}
@@ -80,7 +82,7 @@ export function LayerPanel({
                 影像透明度 <b>{Math.round((1 - layers.opacity) * 100)}%</b>
               </span>
               <Slider
-                className="mt-3"
+                className="mt-2"
                 aria-label="影像透明度"
                 min={0}
                 max={100}
@@ -96,7 +98,7 @@ export function LayerPanel({
             </div>
           </>
         ) : (
-          row("model", "三维实景模型", "倾斜摄影 3D Tiles")
+          <>{row("model", "三维实景模型", "倾斜摄影 3D Tiles")}</>
         )}
         {row("sensors", "边坡监测点位", "现场传感器位置")}
         {config && !config.tiandituToken && (

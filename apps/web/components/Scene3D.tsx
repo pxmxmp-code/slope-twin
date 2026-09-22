@@ -38,6 +38,84 @@ function loadCesium() {
   return cesiumPromise;
 }
 
+type ContourCollection = {
+  features?: Array<{
+    geometry?: { type?: string; coordinates?: unknown };
+    properties?: { elevation?: unknown; fid?: unknown; id?: unknown };
+  }>;
+};
+
+function addContours(
+  C: typeof Cesium,
+  source: Cesium.CustomDataSource,
+  data: ContourCollection,
+  groundElevation: number,
+) {
+  const labeled = new Set<number>();
+  for (const feature of data.features ?? []) {
+    const elevation = feature.properties?.elevation;
+    const coordinates = feature.geometry?.coordinates;
+    if (
+      feature.geometry?.type !== "MultiLineString" ||
+      typeof elevation !== "number" ||
+      !Array.isArray(coordinates)
+    )
+      continue;
+
+    const major = elevation % 20 === 0;
+    for (const line of coordinates) {
+      if (!Array.isArray(line)) continue;
+      const positions = line.flatMap((coordinate) => {
+        if (
+          !Array.isArray(coordinate) ||
+          typeof coordinate[0] !== "number" ||
+          typeof coordinate[1] !== "number"
+        )
+          return [];
+        return [
+          C.Cartesian3.fromDegrees(
+            coordinate[0],
+            coordinate[1],
+            elevation - groundElevation + 1,
+          ),
+        ];
+      });
+      if (positions.length < 2) continue;
+      source.entities.add({
+        properties: {
+          elevation,
+          fid: feature.properties?.fid,
+          sourceId: feature.properties?.id,
+        },
+        polyline: {
+          positions,
+          width: major ? 2 : 1,
+          material: C.Color.fromCssColorString(
+            major ? "#f59e0b" : "#2563eb",
+          ).withAlpha(major ? 0.9 : 0.45),
+        },
+      });
+      if (major && !labeled.has(elevation)) {
+        labeled.add(elevation);
+        source.entities.add({
+          position: positions[Math.floor(positions.length / 2)],
+          properties: { elevation },
+          label: {
+            text: `${elevation} m`,
+            font: "10px -apple-system, BlinkMacSystemFont, sans-serif",
+            fillColor: C.Color.fromCssColorString("#92400e"),
+            outlineColor: C.Color.WHITE,
+            outlineWidth: 3,
+            style: C.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new C.Cartesian2(0, -4),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      }
+    }
+  }
+}
+
 export default function Scene3D({
   config,
   layers,
@@ -63,12 +141,19 @@ export default function Scene3D({
   const orbitListenerRef = useRef<(() => void) | null>(null);
 
   const jmdDataSourceRef = useRef<Cesium.GeoJsonDataSource | null>(null);
+  const contourDataSourceRef = useRef<Cesium.CustomDataSource | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
   const [selectedJmd, setSelectedJmd] = useState<{
     id?: number;
     xm?: string;
     rs?: number;
     area?: string;
     len?: string;
+  } | null>(null);
+  const [selectedContour, setSelectedContour] = useState<{
+    elevation: number;
+    fid?: number;
+    sourceId?: number;
   } | null>(null);
 
   const onStatusRef = useRef(onStatus);
@@ -84,6 +169,7 @@ export default function Scene3D({
   useEffect(() => {
     let disposed = false;
     let viewer: Cesium.Viewer | undefined;
+    let removeContourLod: (() => void) | undefined;
 
     async function initialize() {
       onStatusRef.current("正在加载三维场景…");
@@ -107,6 +193,7 @@ export default function Scene3D({
           requestRenderMode: false,
         });
         viewerRef.current = viewer;
+        setViewerReady(true);
 
         // Clean Natural Lighting, Daytime Sky, and Globe Base
         if (viewer.scene.skyBox) {
@@ -164,9 +251,54 @@ export default function Scene3D({
           return;
         }
 
+        const normal = C.Ellipsoid.WGS84.geodeticSurfaceNormal(
+          model.boundingSphere.center,
+          new C.Cartesian3(),
+        );
+        const translation = C.Cartesian3.multiplyByScalar(
+          normal,
+          -config.groundElevation,
+          new C.Cartesian3(),
+        );
+        model.modelMatrix = C.Matrix4.fromTranslation(translation);
+
         viewer.scene.primitives.add(model);
         modelRef.current = model;
         model.show = latestLayers.current.model;
+
+        let contourInterval = 0;
+        let contourRequest = 0;
+        const loadContours = async (interval: number) => {
+          if (interval === contourInterval) return;
+          contourInterval = interval;
+          const request = ++contourRequest;
+          try {
+            const response = await fetch(
+              `/api/features/contours?interval=${interval}`,
+            );
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = (await response.json()) as ContourCollection;
+            if (
+              request !== contourRequest ||
+              disposed ||
+              !viewer ||
+              viewer.isDestroyed()
+            )
+              return;
+            const source = new C.CustomDataSource(`contours-${interval}m`);
+            addContours(C, source, data, config.groundElevation);
+            source.show = latestLayers.current.contours;
+            await viewer.dataSources.add(source);
+            if (contourDataSourceRef.current)
+              viewer.dataSources.remove(contourDataSourceRef.current, true);
+            contourDataSourceRef.current = source;
+          } catch (error) {
+            contourInterval = 0;
+            console.warn("Failed to load contours in Cesium:", error);
+            onStatusRef.current("等高线加载失败，请检查 GeoServer WFS。");
+          }
+        };
+        void loadContours(20);
 
         // 4. Load JMD Feature Service (Residential Buildings)
         void C.GeoJsonDataSource.load("/api/features/jmd", {
@@ -215,6 +347,16 @@ export default function Scene3D({
         );
         viewer.camera.lookAtTransform(C.Matrix4.IDENTITY);
 
+        removeContourLod = viewer.camera.moveEnd.addEventListener(() => {
+          if (!viewer || disposed) return;
+          const distance = C.Cartesian3.distance(
+            viewer.camera.positionWC,
+            model.boundingSphere.center,
+          );
+          const ratio = distance / model.boundingSphere.radius;
+          void loadContours(ratio <= 2 ? 2 : ratio <= 4 ? 10 : 20);
+        });
+
         onStatusRef.current(
           model.show
             ? "三维场景已定位，正在加载模型…"
@@ -249,6 +391,7 @@ export default function Scene3D({
 
     return () => {
       disposed = true;
+      removeContourLod?.();
       if (orbitListenerRef.current) {
         orbitListenerRef.current();
         orbitListenerRef.current = null;
@@ -258,7 +401,13 @@ export default function Scene3D({
           viewer.dataSources.remove(jmdDataSourceRef.current, true);
         } catch {}
       }
+      if (contourDataSourceRef.current && viewer && !viewer.isDestroyed()) {
+        try {
+          viewer.dataSources.remove(contourDataSourceRef.current, true);
+        } catch {}
+      }
       jmdDataSourceRef.current = null;
+      contourDataSourceRef.current = null;
       modelRef.current = null;
       viewerRef.current = null;
       imageryRef.current = {};
@@ -268,6 +417,7 @@ export default function Scene3D({
   }, [
     config.tilesetUrl,
     config.tiandituToken,
+    config.groundElevation,
     config.bounds[0],
     config.bounds[1],
     config.bounds[2],
@@ -288,6 +438,10 @@ export default function Scene3D({
     if (jmdDataSourceRef.current) {
       jmdDataSourceRef.current.show = layers.jmd;
     }
+    if (contourDataSourceRef.current) {
+      contourDataSourceRef.current.show = layers.contours;
+    }
+    if (!layers.contours) setSelectedContour(null);
     if (!layers.jmd) {
       setSelectedJmd(null);
     }
@@ -296,7 +450,7 @@ export default function Scene3D({
     if (img.basemap) img.basemap.show = layers.basemap;
     if (img.labels) img.labels.show = layers.labels;
     viewer.scene.requestRender();
-  }, [layers]);
+  }, [layers, viewerReady]);
 
   // 3D Slope Sensors Pins
   useEffect(() => {
@@ -318,7 +472,7 @@ export default function Scene3D({
           position: C.Cartesian3.fromDegrees(
             sensor.lon,
             sensor.lat,
-            sensor.alt + 15,
+            sensor.alt - config.groundElevation + 15,
           ),
           point: {
             pixelSize: 10,
@@ -347,7 +501,7 @@ export default function Scene3D({
         sensorEntitiesRef.current.push(ent);
       });
     }
-  }, [layers.sensors]);
+  }, [layers.sensors, config.groundElevation, viewerReady]);
 
   // Orbit / Auto Cruise
   useEffect(() => {
@@ -374,7 +528,7 @@ export default function Scene3D({
         orbitListenerRef.current = null;
       }
     };
-  }, [autoOrbit]);
+  }, [autoOrbit, viewerReady]);
 
   // Feature Picking (JMD buildings) when not in measure mode
   useEffect(() => {
@@ -388,6 +542,23 @@ export default function Scene3D({
       const picked = viewer.scene.pick(click.position);
       if (picked && picked.id && picked.id.properties) {
         const props = picked.id.properties;
+        const elevationVal =
+          typeof props.elevation?.getValue === "function"
+            ? props.elevation.getValue()
+            : undefined;
+        if (typeof elevationVal === "number") {
+          const fid =
+            typeof props.fid?.getValue === "function"
+              ? props.fid.getValue()
+              : undefined;
+          const sourceId =
+            typeof props.sourceId?.getValue === "function"
+              ? props.sourceId.getValue()
+              : undefined;
+          setSelectedJmd(null);
+          setSelectedContour({ elevation: elevationVal, fid, sourceId });
+          return;
+        }
         const idVal =
           typeof props.id?.getValue === "function"
             ? props.id.getValue()
@@ -417,16 +588,18 @@ export default function Scene3D({
             area: areaVal !== undefined ? Number(areaVal).toFixed(2) : "--",
             len: lenVal !== undefined ? Number(lenVal).toFixed(2) : "--",
           });
+          setSelectedContour(null);
           return;
         }
       }
       setSelectedJmd(null);
+      setSelectedContour(null);
     }, C.ScreenSpaceEventType.LEFT_CLICK);
 
     return () => {
       handler.destroy();
     };
-  }, [measureMode]);
+  }, [measureMode, viewerReady]);
 
   // Preset Pitch & Heading
   useEffect(() => {
@@ -465,6 +638,44 @@ export default function Scene3D({
   return (
     <>
       <div className="map-canvas" ref={container} />
+
+      {selectedContour && layers.contours && (
+        <div
+          className="absolute bottom-4 left-4 z-20 w-52 rounded-xl border border-slate-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md"
+          role="region"
+          aria-label="等高线属性"
+        >
+          <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
+            <strong className="text-sm text-slate-800">〰 等高线属性</strong>
+            <button
+              type="button"
+              className="text-slate-400 hover:text-slate-700"
+              onClick={() => setSelectedContour(null)}
+              title="关闭"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">高程</span>
+            <strong className="text-amber-700">
+              {selectedContour.elevation} m
+            </strong>
+          </div>
+          <div className="mt-1 flex justify-between">
+            <span className="text-slate-500">级别</span>
+            <strong className="text-slate-700">
+              {selectedContour.elevation % 20 === 0 ? "20m 主曲线" : "2m 曲线"}
+            </strong>
+          </div>
+          <div className="mt-1 flex justify-between">
+            <span className="text-slate-500">要素 ID</span>
+            <strong className="text-slate-700">
+              {selectedContour.sourceId ?? selectedContour.fid ?? "--"}
+            </strong>
+          </div>
+        </div>
+      )}
 
       {/* Floating 3D Measure HUD */}
       {measureMode !== "none" && (
@@ -531,7 +742,7 @@ export default function Scene3D({
       {/* Floating 3D Selected JMD Card */}
       {selectedJmd && layers.jmd && (
         <div
-          className="absolute top-16 right-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl p-3.5 shadow-xl w-64 text-xs"
+          className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl p-3.5 shadow-xl w-64 text-xs"
           role="region"
           aria-label="居民地要素详情"
         >

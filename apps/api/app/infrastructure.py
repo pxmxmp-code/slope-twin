@@ -104,6 +104,27 @@ class Infrastructure:
             raise HTTPException(502, "GeoServer 未返回 PNG，请检查图层配置")
         return response.content
 
+    async def contours(self, interval: int) -> dict[str, object]:
+        try:
+            response = await self.http.get(
+                self.settings.geoserver_wfs_url,
+                params={
+                    "service": "WFS",
+                    "version": "2.0.0",
+                    "request": "GetFeature",
+                    "typeNames": self.settings.geoserver_contour_layer,
+                    "outputFormat": "application/json",
+                    "srsName": "EPSG:4326",
+                    "CQL_FILTER": (
+                        f"elevation/{interval}=floor(elevation/{interval})"
+                    ),
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as error:
+            raise HTTPException(502, "等高线服务不可用，请检查 GeoServer") from error
+
     async def open_object(
         self, method: str, path: str, headers: dict[str, str]
     ) -> httpx.Response:

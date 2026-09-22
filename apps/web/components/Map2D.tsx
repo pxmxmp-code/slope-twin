@@ -50,6 +50,36 @@ function jmdPopupContent(properties: JmdProperties) {
   return content;
 }
 
+function contourPopupContent(properties: Record<string, unknown>) {
+  const content = document.createElement("div");
+  content.className = "jmd-popup-content";
+  const elevation = Number(properties.elevation);
+  const title = document.createElement("strong");
+  title.textContent = "〰 等高线属性";
+  content.append(title);
+  const rows = [
+    ["高程", Number.isFinite(elevation) ? `${elevation} m` : "--"],
+    ["FID", String(properties.fid ?? "--")],
+    ["要素 ID", String(properties.id ?? "--")],
+  ];
+  for (const [label, result] of rows) {
+    const row = document.createElement("div");
+    const name = document.createElement("span");
+    const value = document.createElement("b");
+    name.textContent = label;
+    value.textContent = result;
+    row.append(name, value);
+    content.append(row);
+  }
+  return content;
+}
+
+function contourIntervalForZoom(zoom: number) {
+  if (zoom >= 18) return 2;
+  if (zoom >= 16) return 10;
+  return 20;
+}
+
 function calculateDistance(coords: [number, number][]): {
   totalMeters: number;
   segments: number[];
@@ -120,6 +150,7 @@ export default function Map2D({
       accessToken: token,
       style: {
         version: 8,
+        glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
         sources: {},
         layers: [
           {
@@ -135,12 +166,8 @@ export default function Map2D({
       attributionControl: false,
     });
     mapRef.current = map;
-
-    const navControl = new mapboxgl.NavigationControl({
-      showCompass: true,
-      visualizePitch: true,
-    });
-    map.addControl(navControl, "top-right");
+    let contourInterval = 20;
+    let contourLodReady = false;
 
     const scaleControl = new mapboxgl.ScaleControl({ unit: "metric" });
     map.addControl(scaleControl, "bottom-left");
@@ -343,6 +370,95 @@ export default function Map2D({
         },
       });
 
+      map.addSource("contours-src", {
+        type: "geojson",
+        data: "/api/features/contours?interval=20",
+      });
+      map.addLayer({
+        id: "contour-minor",
+        type: "line",
+        source: "contours-src",
+        filter: ["!=", ["%", ["to-number", ["get", "elevation"]], 20], 0],
+        layout: {
+          visibility: layersRef.current.contours ? "visible" : "none",
+        },
+        paint: {
+          "line-color": "#2563eb",
+          "line-width": 1,
+          "line-opacity": 0.5,
+        },
+      });
+      map.addLayer({
+        id: "contour-major",
+        type: "line",
+        source: "contours-src",
+        filter: ["==", ["%", ["to-number", ["get", "elevation"]], 20], 0],
+        layout: {
+          visibility: layersRef.current.contours ? "visible" : "none",
+        },
+        paint: {
+          "line-color": "#f59e0b",
+          "line-width": 2,
+          "line-opacity": 0.9,
+        },
+      });
+      map.addLayer({
+        id: "contour-labels",
+        type: "symbol",
+        source: "contours-src",
+        filter: ["==", ["%", ["to-number", ["get", "elevation"]], 20], 0],
+        layout: {
+          visibility: layersRef.current.contours ? "visible" : "none",
+          "symbol-placement": "line",
+          "symbol-spacing": 350,
+          "text-field": ["concat", ["to-string", ["get", "elevation"]], " m"],
+          "text-size": 10,
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#92400e",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      });
+
+      const showContour = (event: mapboxgl.MapMouseEvent) => {
+        const properties = (
+          event.features?.[0] as unknown as {
+            properties?: Record<string, unknown>;
+          }
+        )?.properties;
+        if (!properties || measureModeRef.current !== "none") return;
+        new mapboxgl.Popup({ className: "jmd-popup", maxWidth: "220px" })
+          .setLngLat(event.lngLat)
+          .setDOMContent(contourPopupContent(properties))
+          .addTo(map);
+      };
+      for (const layer of ["contour-minor", "contour-major"]) {
+        map.on("mouseenter", layer, () => {
+          if (measureModeRef.current === "none")
+            map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseleave", layer, () => {
+          if (measureModeRef.current === "none")
+            map.getCanvas().style.cursor = "";
+        });
+        map.on("click", layer, showContour);
+      }
+
+      map.once("idle", () => {
+        contourLodReady = true;
+      });
+      map.on("zoomend", () => {
+        if (!contourLodReady) return;
+        const nextInterval = contourIntervalForZoom(map.getZoom());
+        if (nextInterval === contourInterval) return;
+        contourInterval = nextInterval;
+        const source = map.getSource("contours-src") as
+          mapboxgl.GeoJSONSource | undefined;
+        source?.setData(`/api/features/contours?interval=${nextInterval}`);
+      });
+
       // Hover and click interaction on residential buildings
       map.on("mouseenter", "jmd-fill", () => {
         if (measureModeRef.current === "none") {
@@ -450,7 +566,22 @@ export default function Map2D({
         layers.jmd ? "visible" : "none",
       );
     }
-  }, [layers.basemap, layers.labels, layers.dom, layers.opacity, layers.jmd]);
+    for (const id of ["contour-minor", "contour-major", "contour-labels"]) {
+      if (mLayerExists(m, id))
+        m.setLayoutProperty(
+          id,
+          "visibility",
+          layers.contours ? "visible" : "none",
+        );
+    }
+  }, [
+    layers.basemap,
+    layers.labels,
+    layers.dom,
+    layers.opacity,
+    layers.jmd,
+    layers.contours,
+  ]);
 
   // 3. Sensor markers
   useEffect(() => {

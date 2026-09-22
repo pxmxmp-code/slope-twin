@@ -39,6 +39,7 @@ def test_public_config_excludes_private_settings(settings):
     assert response.status_code == 200
     assert response.json()["mapboxToken"] == "public-test-token"
     assert response.json()["tilesetUrl"] == "/tiles/tileset.json"
+    assert response.json()["groundElevation"] == 1208
     assert "secret" not in response.text
     assert "geoserver" not in response.text.lower()
 
@@ -145,3 +146,37 @@ def test_geoserver_errors_are_not_served_as_images(
 def test_features_require_database(settings):
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/features/jmd").status_code == 503
+
+
+def test_contours_are_loaded_from_geoserver_wfs(settings):
+    seen: list[httpx.Request] = []
+    collection = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "MultiLineString", "coordinates": []},
+                "properties": {"elevation": 1208},
+            }
+        ],
+    }
+
+    def upstream(request: httpx.Request):
+        seen.append(request)
+        return httpx.Response(200, json=collection)
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        original = use_mock_http(app, upstream)
+        response = client.get("/api/features/contours?interval=10")
+        app.state.infrastructure.http = original
+
+    assert response.json() == collection
+    assert seen[0].url.params["typeNames"] == "ne:majiadi_contours"
+    assert seen[0].url.params["srsName"] == "EPSG:4326"
+    assert seen[0].url.params["CQL_FILTER"] == "elevation/10=floor(elevation/10)"
+
+
+def test_contours_reject_unsupported_interval(settings):
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/features/contours?interval=3").status_code == 422

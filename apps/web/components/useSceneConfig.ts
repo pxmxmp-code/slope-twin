@@ -12,7 +12,8 @@ function isSceneConfig(value: unknown): value is SceneConfig {
     config.bounds.length === 4 &&
     config.bounds.every((item) => typeof item === "number") &&
     typeof config.domTiles === "string" &&
-    typeof config.tilesetUrl === "string"
+    typeof config.tilesetUrl === "string" &&
+    typeof config.groundElevation === "number"
   );
 }
 
